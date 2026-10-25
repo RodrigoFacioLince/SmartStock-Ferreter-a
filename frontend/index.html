@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmartStock Ferretería</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="login-screen" class="auth-shell">
+        <div class="auth-card">
+          <div class="brand-block">
+            <div class="brand-circle">S</div>
+            <div>
+              <p class="eyebrow">Sistema de inventario</p>
+              <h1>SmartStock Ferretería</h1>
+            </div>
+          </div>
+
+          <form id="login-form" class="auth-form">
+            <h2>Iniciar sesión</h2>
+            <label>
+              <span>Correo electrónico</span>
+              <input id="login-email" name="email" type="email" placeholder="admin@smartstock.test" required />
+            </label>
+            <label>
+              <span>Contraseña</span>
+              <input id="login-password" name="password" type="password" placeholder="••••••••" required />
+            </label>
+            <button type="submit" class="primary-btn">Entrar</button>
+            <p class="demo-note">Demo: usa cualquier correo con el texto <strong>admin</strong> para entrar como administrador.</p>
+          </form>
+        </div>
+      </div>
+
+      <div id="main-shell" class="app-shell hidden">
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <div class="brand-badge">S</div>
+            <div>
+              <h2>SmartStock</h2>
+              <p>Ferretería</p>
+            </div>
+          </div>
+
+          <nav class="nav">
+            <button class="nav-item active" data-view="dashboard">Inicio</button>
+            <button class="nav-item" data-view="products">Productos</button>
+            <button class="nav-item" data-view="inventory">Inventario</button>
+            <button class="nav-item" data-view="sales">Ventas</button>
+            <button class="nav-item" data-view="history">Historial</button>
+            <button class="nav-item" data-view="assistant">Asistente IA</button>
+          </nav>
+
+          <div class="sidebar-footer">
+            <button id="logout-btn" class="secondary-btn">Cerrar sesión</button>
+          </div>
+        </aside>
+
+        <main class="main-panel">
+          <header class="topbar">
+            <div>
+              <p class="eyebrow">Panel principal</p>
+              <h3 id="topbar-title">Dashboard</h3>
+            </div>
+            <div class="user-chip">
+              <span class="user-dot"></span>
+              <span id="logged-user">Usuario</span>
+            </div>
+          </header>
+
+          <div id="config-banner" class="config-banner hidden"></div>
+
+          <section id="view-dashboard" class="view active">
+            <div class="stats-grid">
+              <article class="stat-card accent-blue">
+                <span class="label">Productos registrados</span>
+                <strong id="stat-products">0</strong>
+              </article>
+              <article class="stat-card accent-green">
+                <span class="label">Ventas del día</span>
+                <strong id="stat-sales-day">0</strong>
+              </article>
+              <article class="stat-card accent-orange">
+                <span class="label">Stock bajo</span>
+                <strong id="stat-low-stock">0</strong>
+              </article>
+              <article class="stat-card accent-purple">
+                <span class="label">Total de ventas</span>
+                <strong id="stat-total-sales">$0</strong>
+              </article>
+            </div>
+
+            <div class="panel-grid two-columns">
+              <div class="panel-card">
+                <div class="section-header">
+                  <h4>Accesos rápidos</h4>
+                </div>
+                <div class="quick-actions">
+                  <button class="action-btn" data-view="products">+ Nuevo producto</button>
+                  <button class="action-btn" data-view="sales">Registrar venta</button>
+                  <button class="action-btn" data-view="inventory">Revisar inventario</button>
+                </div>
+              </div>
+
+              <div class="panel-card">
+                <div class="section-header">
+                  <h4>Ventas recientes</h4>
+                </div>
+                <ul id="recent-sales-list" class="sale-list"></ul>
+              </div>
+            </div>
+          </section>
+
+          <section id="view-products" class="view">
+            <div class="section-toolbar">
+              <div>
+                <p class="eyebrow">Catálogo</p>
+                <h3>Productos</h3>
+              </div>
+              <button id="new-product-btn" class="primary-btn admin-only">Registrar producto</button>
+            </div>
+
+            <div class="panel-grid two-columns product-layout">
+              <div class="panel-card">
+                <form id="product-form" class="stacked-form">
+                  <input id="product-id" type="hidden" />
+                  <label>
+                    <span>Nombre</span>
+                    <input id="product-name" name="name" required />
+                  </label>
+                  <label>
+                    <span>Descripción</span>
+                    <textarea id="product-description" name="description" rows="3"></textarea>
+                  </label>
+                  <div class="field-row">
+                    <label>
+                      <span>Categoría</span>
+                      <input id="product-category" name="category" required />
+                    </label>
+                    <label>
+                      <span>Precio</span>
+                      <input id="product-price" name="price" type="number" step="0.01" min="0" required />
+                    </label>
+                  </div>
+                  <div class="field-row">
+                    <label>
+                      <span>Cantidad</span>
+                      <input id="product-quantity" name="quantity" type="number" min="0" required />
+                    </label>
+                    <label>
+                      <span>Stock mínimo</span>
+                      <input id="product-min-stock" name="min_stock" type="number" min="0" required />
+                    </label>
+                  </div>
+                  <label>
+                    <span>URL de imagen</span>
+                    <input id="product-image-url" name="image_url" type="url" placeholder="https://example.com/imagen.jpg" />
+                  </label>
+                  <label>
+                    <span>Subir imagen</span>
+                    <input id="product-image-file" type="file" accept="image/*" />
+                  </label>
+                  <div class="form-actions">
+                    <button type="submit" class="primary-btn admin-only">Guardar producto</button>
+                    <button type="button" id="cancel-product-btn" class="secondary-btn">Limpiar</button>
+                  </div>
+                </form>
+              </div>
+
+              <div class="panel-card table-card">
+                <div class="filters-row">
+                  <input id="product-search" type="search" placeholder="Buscar producto" />
+                  <select id="product-category-filter">
+                    <option value="">Todas las categorías</option>
+                  </select>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Categoría</th>
+                        <th>Stock</th>
+                        <th>Precio</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody id="product-table-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="view-inventory" class="view">
+            <div class="section-toolbar">
+              <div>
+                <p class="eyebrow">Inventario</p>
+                <h3>Existencias actuales</h3>
+              </div>
+            </div>
+            <div class="panel-card">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th>Categoría</th>
+                      <th>Disponible</th>
+                      <th>Stock mínimo</th>
+                      <th>Estado</th>
+                      <th>Actualizar</th>
+                    </tr>
+                  </thead>
+                  <tbody id="inventory-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section id="view-sales" class="view">
+            <div class="section-toolbar">
+              <div>
+                <p class="eyebrow">Registro</p>
+                <h3>Ventas</h3>
+              </div>
+            </div>
+
+            <div class="panel-grid two-columns product-layout">
+              <div class="panel-card">
+                <form id="sale-form" class="stacked-form">
+                  <label>
+                    <span>Producto</span>
+                    <select id="sale-product"></select>
+                  </label>
+                  <label>
+                    <span>Cantidad</span>
+                    <input id="sale-quantity" type="number" min="1" value="1" />
+                  </label>
+                  <button type="button" id="add-sale-item-btn" class="primary-btn">Agregar producto</button>
+                  <div class="sale-notes">
+                    <label>
+                      <span>Notas</span>
+                      <textarea id="sale-notes" rows="3" placeholder="Opcional"></textarea>
+                    </label>
+                  </div>
+                </form>
+              </div>
+
+              <div class="panel-card table-card">
+                <div class="section-header compact">
+                  <h4>Resumen de venta</h4>
+                  <strong id="sale-total">$0.00</strong>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Producto</th>
+                        <th>Cantidad</th>
+                        <th>Unitario</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody id="sale-items-body"></tbody>
+                  </table>
+                </div>
+                <div class="form-actions right-align">
+                  <button id="confirm-sale-btn" type="button" class="primary-btn">Confirmar venta</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="view-history" class="view">
+            <div class="section-toolbar">
+              <div>
+                <p class="eyebrow">Movimientos</p>
+                <h3>Historial de ventas</h3>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <div class="filters-row">
+                <input id="sales-date-filter" type="date" />
+                <button id="clear-sales-filter" class="secondary-btn">Limpiar</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Fecha</th>
+                      <th>Vendedor</th>
+                      <th>Productos</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sales-history-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section id="view-assistant" class="view">
+            <div class="section-toolbar">
+              <div>
+                <p class="eyebrow">IA</p>
+                <h3>Asistente de ventas</h3>
+              </div>
+            </div>
+
+            <div class="assistant-card panel-card">
+              <div id="assistant-messages" class="assistant-messages">
+                <div class="assistant-message bot">Hola. Puedo ayudarte a consultar el catálogo, sugerir productos y recomendar complementos.</div>
+              </div>
+              <form id="assistant-form" class="assistant-form">
+                <input id="assistant-input" type="text" placeholder="Pregúntame por productos, alternativas o complementos" />
+                <button type="submit" class="primary-btn">Enviar</button>
+              </form>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
