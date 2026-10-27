@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime, timezone
+from ipaddress import ip_address
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -8,7 +9,7 @@ from uuid import uuid4
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from supabase import Client, create_client
@@ -34,6 +35,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
 SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY", "").strip()
+LOCAL_DEMO_MODE = os.getenv("SMARTSTOCK_LOCAL_DEMO", "").strip().lower() in {"1", "true", "yes"}
 
 
 class ProductPayload(BaseModel):
@@ -62,7 +64,7 @@ class SalePayload(BaseModel):
 
 class LoginPayload(BaseModel):
     email: str
-    password: str
+    password: str = ""
 
 
 class ChatPayload(BaseModel):
@@ -78,11 +80,11 @@ def now_iso() -> str:
 
 
 def is_supabase_configured() -> bool:
-    return bool(SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY)
+    return not LOCAL_DEMO_MODE and bool(SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY)
 
 
 def is_supabase_requested() -> bool:
-    return bool(SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY or SUPABASE_SECRET_KEY)
+    return not LOCAL_DEMO_MODE and bool(SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY or SUPABASE_SECRET_KEY)
 
 
 def use_local_demo() -> bool:
@@ -352,13 +354,15 @@ def system_status() -> dict[str, Any]:
 
 
 @app.post("/api/auth/login")
-async def login(payload: LoginPayload):
+async def login(payload: LoginPayload, request: Request):
     email = payload.email.strip().lower()
     password = payload.password.strip()
-    if not email or not password:
-        raise HTTPException(status_code=400, detail="Correo y contraseña obligatorios")
+    if not email:
+        raise HTTPException(status_code=400, detail="Correo obligatorio")
 
     if not use_local_demo():
+        if not password:
+            raise HTTPException(status_code=400, detail="La contraseña es obligatoria")
         auth_client = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
         try:
             result = auth_client.auth.sign_in_with_password({"email": email, "password": password})
@@ -381,6 +385,18 @@ async def login(payload: LoginPayload):
         }
 
     role = "seller"
+    if not password:
+        if email != "admin@smartstock.test":
+            raise HTTPException(status_code=400, detail="La contraseña es obligatoria")
+        client_host = request.client.host if request.client else ""
+        try:
+            is_local_client = ip_address(client_host).is_loopback
+        except ValueError:
+            is_local_client = False
+        if not is_local_client:
+            raise HTTPException(status_code=403, detail="El acceso demo de administrador solo está disponible desde este equipo")
+        role = "admin"
+
     username = email.split("@", 1)[0]
     token = f"token-{len(AUTH_USERS) + 1}"
     user = {"id": token, "email": email, "name": username, "role": role}

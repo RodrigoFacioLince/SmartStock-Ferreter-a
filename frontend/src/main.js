@@ -3,7 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 const API_BASE = 'http://localhost:8000';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
-const supabase = supabaseUrl && supabasePublishableKey ? createClient(supabaseUrl, supabasePublishableKey, {
+const localDemoMode = import.meta.env.VITE_LOCAL_DEMO === 'true';
+const supabase = !localDemoMode && supabaseUrl && supabasePublishableKey ? createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

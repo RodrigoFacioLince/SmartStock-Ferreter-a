@@ -38,13 +38,56 @@ class SupabaseApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertIn("No se usarán datos locales", response.json()["detail"])
 
-    def test_demo_login_never_grants_admin_from_email(self):
+    def test_demo_login_grants_admin_without_password_for_local_demo_account(self):
+        with patch.object(main, "ip_address", return_value=SimpleNamespace(is_loopback=True)):
+            response = self.client.post(
+                "/api/auth/login",
+                json={"email": "admin@smartstock.test"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["user"]["role"], "admin")
+
+    def test_explicit_local_demo_mode_overrides_supabase_configuration(self):
+        self.configure_cloud()
+        with (
+            patch.object(main, "LOCAL_DEMO_MODE", True),
+            patch.object(main, "ip_address", return_value=SimpleNamespace(is_loopback=True)),
+            patch.object(main, "create_client") as create_client,
+        ):
+            response = self.client.post(
+                "/api/auth/login",
+                json={"email": "admin@smartstock.test"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["user"]["role"], "admin")
+        create_client.assert_not_called()
+
+    def test_demo_login_never_grants_admin_from_other_email(self):
         response = self.client.post(
             "/api/auth/login",
             json={"email": "admin@example.test", "password": "any-password"},
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["user"]["role"], "seller")
+
+    def test_passwordless_demo_admin_login_is_rejected_for_remote_clients(self):
+        with patch.object(main, "ip_address", return_value=SimpleNamespace(is_loopback=False)):
+            response = self.client.post(
+                "/api/auth/login",
+                json={"email": "admin@smartstock.test"},
+            )
+        self.assertEqual(response.status_code, 403)
+
+    def test_passwordless_login_is_rejected_when_supabase_is_configured(self):
+        self.configure_cloud()
+        with patch.object(main, "create_client") as create_client:
+            response = self.client.post(
+                "/api/auth/login",
+                json={"email": "admin@smartstock.test"},
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "La contraseña es obligatoria")
+        create_client.assert_not_called()
 
     def test_dashboard_requires_authentication(self):
         response = self.client.get("/api/dashboard")

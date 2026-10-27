@@ -87,9 +87,18 @@ La URL del backend del frontend está fija actualmente en `http://localhost:8000
 
 ## Acceso en modo demo local
 
-- Cualquier correo válido y una contraseña no vacía permite entrar como vendedor.
+- Entra como administrador con `admin@smartstock.test` y deja la contraseña vacía. Este acceso temporal solo funciona desde el mismo equipo y cuando Supabase no está configurado.
+- Cualquier otro correo válido requiere una contraseña y entra como vendedor.
 
-El modo demo no permite obtener el rol de administrador por el correo. Para probar permisos administrativos, configura Supabase y asigna explícitamente el rol desde SQL Editor. Si falta alguna variable de una configuración de Supabase empezada, el backend devuelve un error y no escribe en el almacenamiento demo.
+Para forzar temporalmente el modo demo local sin modificar las credenciales guardadas en `.env`, establece estas variables antes de ejecutar `npm run dev` en PowerShell:
+
+```powershell
+$env:SMARTSTOCK_LOCAL_DEMO = "true"
+$env:VITE_LOCAL_DEMO = "true"
+npm run dev
+```
+
+El modo demo ignora Supabase mientras esas variables estén activas en el proceso y usa `backend/data/store.json`; no modifica los datos en la nube. El acceso sin contraseña está deshabilitado con Supabase. Para uso real, configura Supabase y asigna explícitamente el rol desde SQL Editor. Si falta alguna variable de una configuración de Supabase empezada y no se fuerza el modo demo, el backend devuelve un error y no escribe en el almacenamiento demo.
 
 ## Modo demo e integración de IA
 
