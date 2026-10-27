@@ -2,8 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 
 const API_BASE = 'http://localhost:8000';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey, {
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+const supabase = supabaseUrl && supabasePublishableKey ? createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -107,17 +107,24 @@ function updateAuthUI() {
 function saveSession(token, user) {
   appState.token = token;
   appState.user = user;
-  localStorage.setItem('smartstock_token', token);
+  if (supabase) {
+    localStorage.removeItem('smartstock_token');
+  } else {
+    localStorage.setItem('smartstock_token', token);
+  }
   localStorage.setItem('smartstock_user', JSON.stringify(user));
 }
 
-function clearSession() {
+async function clearSession() {
   appState.token = '';
   appState.user = null;
   localStorage.removeItem('smartstock_token');
   localStorage.removeItem('smartstock_user');
   if (supabase) {
-    supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) {
+      throw error;
+    }
   }
 }
 
@@ -130,10 +137,7 @@ async function getActiveToken() {
   if (error) {
     throw error;
   }
-  if (!session?.access_token) {
-    throw new Error('La sesión de Supabase no está activa.');
-  }
-  return session.access_token;
+  return session?.access_token || '';
 }
 
 async function apiFetch(url, options = {}) {
@@ -147,13 +151,9 @@ async function apiFetch(url, options = {}) {
   }
 
   if (supabase) {
-    try {
-      const token = await getActiveToken();
+    const token = await getActiveToken();
+    if (token) {
       headers.Authorization = `Bearer ${token}`;
-    } catch (error) {
-      if (appState.token) {
-        headers.Authorization = `Bearer ${appState.token}`;
-      }
     }
   } else if (appState.token) {
     headers.Authorization = `Bearer ${appState.token}`;
@@ -187,7 +187,7 @@ async function bootstrap() {
       els.configBanner.classList.remove('hidden');
     }
   } catch (error) {
-    els.configBanner.textContent = 'No se pudo verificar el estado del backend; continúa en modo local.';
+    els.configBanner.textContent = 'No se pudo verificar el backend. No se cambiará automáticamente a datos locales.';
     els.configBanner.classList.remove('hidden');
   }
 
@@ -201,7 +201,11 @@ async function bootstrap() {
         appState.token = session.access_token;
       }
     } catch (error) {
-      clearSession();
+      try {
+        await clearSession();
+      } catch (signOutError) {
+        console.error('No se pudo limpiar la sesión local de Supabase.', signOutError);
+      }
     }
   }
 
@@ -218,7 +222,11 @@ async function bootstrap() {
     await Promise.all([loadDashboard(), loadProducts(), loadSales()]);
     renderInventory();
   } catch (error) {
-    clearSession();
+    try {
+      await clearSession();
+    } catch (signOutError) {
+      console.error('No se pudo limpiar la sesión local de Supabase.', signOutError);
+    }
     showLogin();
   }
 }
@@ -268,6 +276,13 @@ async function handleLogin(event) {
     await Promise.all([loadDashboard(), loadProducts(), loadSales()]);
     renderInventory();
   } catch (error) {
+    if (supabase) {
+      try {
+        await clearSession();
+      } catch (signOutError) {
+        console.error('No se pudo limpiar la sesión local de Supabase.', signOutError);
+      }
+    }
     alert(error.message);
   }
 }
@@ -641,9 +656,13 @@ function appendAssistantMessage(role, text) {
 }
 
 els.loginForm.addEventListener('submit', handleLogin);
-els.logoutBtn.addEventListener('click', () => {
-  clearSession();
-  showLogin();
+els.logoutBtn.addEventListener('click', async () => {
+  try {
+    await clearSession();
+    showLogin();
+  } catch (error) {
+    alert(`No se pudo cerrar la sesión de Supabase: ${error.message}`);
+  }
 });
 els.navigation.forEach((button) => {
   button.addEventListener('click', () => setView(button.dataset.view));
