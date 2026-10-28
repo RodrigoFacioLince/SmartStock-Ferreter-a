@@ -95,24 +95,42 @@
               </article>
             </div>
 
-            <div class="panel-grid two-columns">
-              <div class="panel-card">
+            <div class="catalog-layout">
+              <section class="panel-card">
                 <div class="section-header">
-                  <h4>Accesos rápidos</h4>
+                  <div>
+                    <p class="eyebrow">Catálogo</p>
+                    <h4>Productos disponibles</h4>
+                  </div>
+                  <button class="secondary-btn" data-view="products">Administrar productos</button>
                 </div>
-                <div class="quick-actions">
-                  <button class="action-btn" data-view="products">+ Nuevo producto</button>
-                  <button class="action-btn" data-view="sales">Registrar venta</button>
-                  <button class="action-btn" data-view="inventory">Revisar inventario</button>
+                <div class="filters-row catalog-filters">
+                  <input id="home-product-search" type="search" placeholder="Buscar por nombre" aria-label="Buscar productos por nombre" />
+                  <select id="home-category-filter" aria-label="Filtrar por categoría">
+                    <option value="">Todas las categorías</option>
+                  </select>
                 </div>
-              </div>
+                <div id="home-product-grid" class="product-grid" aria-live="polite"></div>
+              </section>
 
-              <div class="panel-card">
+              <aside class="panel-card home-cart">
                 <div class="section-header">
-                  <h4>Ventas recientes</h4>
+                  <div>
+                    <p class="eyebrow">Preparación</p>
+                    <h4>Carrito temporal</h4>
+                  </div>
+                  <span id="home-cart-count" class="cart-count">0 unidades</span>
                 </div>
-                <ul id="recent-sales-list" class="sale-list"></ul>
-              </div>
+                <div id="home-cart-items" class="cart-items"></div>
+                <div class="cart-summary">
+                  <span>Total preparado</span>
+                  <strong id="home-cart-total">$0</strong>
+                </div>
+                <div class="form-actions cart-actions">
+                  <button type="button" id="clear-home-cart-btn" class="secondary-btn">Vaciar</button>
+                  <button type="button" id="continue-to-sales-btn" class="primary-btn">Continuar en Ventas</button>
+                </div>
+              </aside>
             </div>
           </section>
 
@@ -165,6 +183,10 @@
                     <span>Subir imagen</span>
                     <input id="product-image-file" type="file" accept="image/*" />
                   </label>
+                  <div id="product-image-preview-wrap" class="image-preview-wrap hidden">
+                    <img id="product-image-preview" class="product-image-preview" alt="Vista previa del producto" />
+                    <button type="button" id="remove-product-image-btn" class="secondary-btn">Quitar imagen seleccionada</button>
+                  </div>
                   <div class="form-actions">
                     <button type="submit" class="primary-btn admin-only">Guardar producto</button>
                     <button type="button" id="cancel-product-btn" class="secondary-btn">Limpiar</button>
@@ -183,6 +205,7 @@
                   <table>
                     <thead>
                       <tr>
+                        <th>Imagen</th>
                         <th>Nombre</th>
                         <th>Categoría</th>
                         <th>Stock</th>
@@ -209,6 +232,7 @@
                 <table>
                   <thead>
                     <tr>
+                      <th>Imagen</th>
                       <th>Producto</th>
                       <th>Categoría</th>
                       <th>Disponible</th>
@@ -265,6 +289,7 @@
                         <th>Cantidad</th>
                         <th>Unitario</th>
                         <th>Total</th>
+                        <th>Acciones</th>
                       </tr>
                     </thead>
                     <tbody id="sale-items-body"></tbody>
@@ -328,6 +353,13 @@
         </main>
       </div>
     </div>
+
+    <dialog id="product-detail-dialog" class="product-detail-dialog" aria-labelledby="product-detail-title">
+      <article class="product-detail-panel">
+        <button type="button" id="close-product-detail-btn" class="detail-close-btn" aria-label="Cerrar detalles">×</button>
+        <div id="product-detail-content"></div>
+      </article>
+    </dialog>
 
     <script type="module" src="/src/main.js"></script>
   </body>
