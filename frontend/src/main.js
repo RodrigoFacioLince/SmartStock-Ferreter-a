@@ -86,9 +86,9 @@ const els = {
 };
 
 function formatMoney(value) {
-  return new Intl.NumberFormat('es-CL', {
+  return new Intl.NumberFormat('es-CO', {
     style: 'currency',
-    currency: 'CLP',
+    currency: 'COP',
   }).format(Number(value || 0));
 }
 
@@ -698,7 +698,7 @@ function renderSalesHistory() {
       return `
         <tr>
           <td>${sale.id}</td>
-          <td>${new Date(date).toLocaleString('es-CL')}</td>
+          <td>${new Date(date).toLocaleString('es-CO')}</td>
           <td>${seller}</td>
           <td>${text}</td>
           <td>${formatMoney(total)}</td>
