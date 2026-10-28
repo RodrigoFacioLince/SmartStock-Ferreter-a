@@ -22,13 +22,18 @@ DATA_FILE = DATA_DIR / "store.json"
 load_dotenv(ROOT_DIR / ".env")
 
 app = FastAPI(title="SmartStock Ferretería API", version="1.0.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+fastapi_app = app
+cors_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("SMARTSTOCK_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+] or [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://172.18.24.173:5173",
+]
+if "*" in cors_origins:
+    raise ValueError("SMARTSTOCK_CORS_ORIGINS debe contener orígenes exactos; no se permite '*'.")
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -757,3 +762,12 @@ def seed_demo_data() -> dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La carga de datos demo no está disponible en modo Supabase.")
     APP_STATE.update(load_state())
     return {"message": "Datos cargados", "products": APP_STATE["products"]}
+
+
+app = CORSMiddleware(
+    app=fastapi_app,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+)

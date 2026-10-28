@@ -6,11 +6,11 @@
       "description": "Taladro de uso general para trabajos de bricolaje y construcción.",
       "category": "Herramientas eléctricas",
       "price": 249.99,
-      "quantity": 12,
+      "quantity": 11,
       "min_stock": 4,
       "image_url": "",
       "created_at": "2026-10-25T01:28:54Z",
-      "updated_at": "2026-10-25T01:28:54Z"
+      "updated_at": "2026-10-27T00:48:34Z"
     },
     {
       "id": "prd-2",
@@ -69,6 +69,23 @@
       ],
       "total": 49.5,
       "notes": "Prueba"
+    },
+    {
+      "id": "sale-18b3c287",
+      "seller": "admin",
+      "seller_role": "seller",
+      "date": "2026-10-27T00:48:34Z",
+      "items": [
+        {
+          "product_id": "prd-1",
+          "product_name": "Taladro Percutor 650W",
+          "quantity": 1,
+          "unit_price": 249.99,
+          "total": 249.99
+        }
+      ],
+      "total": 249.99,
+      "notes": ""
     }
   ]
 }

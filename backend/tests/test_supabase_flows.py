@@ -25,12 +25,46 @@ class SupabaseApiTests(unittest.TestCase):
 
     def tearDown(self):
         main.SUPABASE_URL, main.SUPABASE_PUBLISHABLE_KEY, main.SUPABASE_SECRET_KEY = self.original_config
-        main.app.dependency_overrides.clear()
+        main.fastapi_app.dependency_overrides.clear()
 
     def configure_cloud(self):
         main.SUPABASE_URL = "https://project.invalid"
         main.SUPABASE_PUBLISHABLE_KEY = "sb_publishable_test"
         main.SUPABASE_SECRET_KEY = "sb_secret_test"
+
+    def test_cors_preflight_allows_configured_frontend_origins_and_headers(self):
+        for origin in (
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://172.18.24.173:5173",
+        ):
+            with self.subTest(origin=origin):
+                response = self.client.options(
+                    "/api/sales",
+                    headers={
+                        "Origin": origin,
+                        "Access-Control-Request-Method": "POST",
+                        "Access-Control-Request-Headers": "authorization,content-type",
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["access-control-allow-origin"], origin)
+                self.assertIn("POST", response.headers["access-control-allow-methods"])
+                self.assertIn("authorization", response.headers["access-control-allow-headers"].lower())
+                self.assertIn("content-type", response.headers["access-control-allow-headers"].lower())
+
+    def test_cors_headers_are_present_on_unhandled_server_errors(self):
+        self.configure_cloud()
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
+            "id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"
+        }
+        with patch.object(main, "load_products_from_cloud", new=AsyncMock(side_effect=RuntimeError("test failure"))):
+            response = TestClient(main.app, raise_server_exceptions=False).get(
+                "/api/products",
+                headers={"Origin": "http://172.18.24.173:5173"},
+            )
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://172.18.24.173:5173")
 
     def test_partial_supabase_configuration_never_uses_demo_storage(self):
         main.SUPABASE_URL = "https://project.invalid"
@@ -94,7 +128,7 @@ class SupabaseApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_assistant_is_reported_as_demo_and_not_configured_ai(self):
-        main.app.dependency_overrides[main.get_current_user] = lambda: {
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
             "id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"
         }
         status_response = self.client.get("/api/health")
@@ -105,7 +139,7 @@ class SupabaseApiTests(unittest.TestCase):
 
     def test_supabase_product_failure_is_not_replaced_with_demo_data(self):
         self.configure_cloud()
-        main.app.dependency_overrides[main.get_current_user] = lambda: {
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
             "id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"
         }
         with patch.object(main, "load_products_from_cloud", new=AsyncMock(side_effect=HTTPException(503, "cloud unavailable"))):
@@ -115,7 +149,7 @@ class SupabaseApiTests(unittest.TestCase):
 
     def test_seller_cannot_create_products_even_with_service_key_configured(self):
         self.configure_cloud()
-        main.app.dependency_overrides[main.get_current_user] = lambda: {
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
             "id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"
         }
         with patch.object(main, "create_client") as create_client:
@@ -148,7 +182,7 @@ class SupabaseApiTests(unittest.TestCase):
     def test_sales_rpc_uses_authenticated_seller_id(self):
         self.configure_cloud()
         seller = {"id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"}
-        main.app.dependency_overrides[main.get_current_user] = lambda: seller
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: seller
         service = Mock()
         service.rpc.return_value.execute.return_value.data = {"id": "sale-id", "seller_id": "seller-id"}
         with patch.object(main, "get_service_supabase", return_value=service):
@@ -164,7 +198,7 @@ class SupabaseApiTests(unittest.TestCase):
 
     def test_admin_image_upload_uses_product_images_bucket(self):
         self.configure_cloud()
-        main.app.dependency_overrides[main.get_current_user] = lambda: {
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
             "id": "admin-id", "email": "admin@example.test", "name": "Admin", "role": "admin"
         }
         service = Mock()

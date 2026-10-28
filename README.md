@@ -44,6 +44,10 @@ Esto levanta:
 - Frontend en `http://localhost:5173`
 - Backend en `http://localhost:8000`
 
+El frontend de desarrollo usa por defecto el mismo host desde el que se abrió Vite para llamar al backend en el puerto `8000`. Así, al acceder desde otro dispositivo, las peticiones no apuntan al `localhost` de ese dispositivo. Para usar otro backend, configura `VITE_API_BASE_URL` en `frontend/.env` (por ejemplo, `http://192.168.1.20:8000`). En producción, configura esa variable con la URL del backend o sirve la API bajo el mismo origen mediante un proxy inverso.
+
+El backend permite por defecto los orígenes locales `http://localhost:5173`, `http://127.0.0.1:5173` y `http://172.18.24.173:5173`. Para otros orígenes o producción, define `SMARTSTOCK_CORS_ORIGINS` en el `.env` del backend como una lista separada por comas de orígenes exactos, sin rutas ni comodines.
+
 ## Configuración de Supabase
 
 El backend carga las variables desde `.env` en la raíz del repositorio. El frontend Vite carga las variables públicas desde `frontend/.env`. No copies `SUPABASE_SECRET_KEY` al frontend ni a ninguna variable con prefijo `VITE_`: Vite incorpora esas variables en el código enviado al navegador.
@@ -77,13 +81,11 @@ set role = 'admin'
 where email = 'correo-del-administrador';
 ```
 
-Aplica en orden las migraciones `001_init.sql`, `002_secure_profile_roles.sql` y `003_fix_profile_admin_policy.sql` desde el SQL Editor o mediante Supabase CLI. La primera crea las tablas, políticas, función de registro de ventas y bucket requerido para las imágenes; la segunda restringe la creación de perfiles y cambios de rol; la tercera elimina la recursión RLS, limita la lectura de perfiles a la persona titular o administradores, y asegura que el bucket sea público, tal como requiere `get_public_url()`. Si las migraciones anteriores ya se aplicaron, aplica la tercera también.
+Aplica en orden las migraciones `001_init.sql`, `002_secure_profile_roles.sql`, `003_fix_profile_admin_policy.sql` y `004_fix_register_sale_order.sql` desde el SQL Editor o mediante Supabase CLI. La primera crea las tablas, políticas, función de registro de ventas y bucket requerido para las imágenes; la segunda restringe la creación de perfiles y cambios de rol; la tercera elimina la recursión RLS, limita la lectura de perfiles a la persona titular o administradores, y asegura que el bucket sea público, tal como requiere `get_public_url()`; la cuarta corrige el orden de inserción de ventas/detalles y actualiza la función en proyectos que ya aplicaron la migración inicial. Aplica la cuarta migración también en proyectos existentes.
 
 Las imágenes se almacenan en `Storage > Buckets > product-images` y son públicas para lectura; la carga y modificación se limitan a administradores. Comprueba en el panel que el bucket exista y figure como público.
 
 El archivo `.env.example` es una plantilla, no se carga automáticamente. La integración usa `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` y `SUPABASE_SECRET_KEY`; no usa las antiguas `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`.
-
-La URL del backend del frontend está fija actualmente en `http://localhost:8000` en `frontend/src/main.js`; `FRONTEND_API_BASE_URL` no la configura.
 
 ## Acceso en modo demo local
 

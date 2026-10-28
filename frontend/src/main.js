@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-const API_BASE = 'http://localhost:8000';
+const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim();
+const API_BASE = (configuredApiBase || (import.meta.env.DEV
+  ? `http://${window.location.hostname}:8000`
+  : '')).replace(/\/$/, '');
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 const localDemoMode = import.meta.env.VITE_LOCAL_DEMO === 'true';
