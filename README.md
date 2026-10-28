@@ -160,7 +160,7 @@ Sin ninguna variable de Supabase, el backend opera en modo demo local y conserva
 - Historial de ventas con filtro por fecha y actualización de catálogo, inventario y métricas después de registrar una venta.
 - Asistente de demostración con respuestas basadas en el catálogo; todavía no consume OpenAI.
 
-Los importes se muestran actualmente en pesos chilenos (`CLP`, formato `es-CL`).
+Los importes se muestran actualmente en pesos colombianos (`COP`, formato `es-CO`).
 
 ## Flujo de registro de ventas
 
