@@ -64,7 +64,13 @@ Sin credenciales de Supabase se puede usar directamente el [modo demo local](#ac
 
 El frontend de desarrollo usa por defecto el mismo host desde el que se abrió Vite para llamar al backend en el puerto `8000`. Así, al acceder desde otro dispositivo, las peticiones no apuntan al `localhost` de ese dispositivo. Para usar otro backend, configura `VITE_API_BASE_URL` en `frontend/.env` (por ejemplo, `http://192.168.1.20:8000`). En producción, configura esa variable con la URL del backend o sirve la API bajo el mismo origen mediante un proxy inverso.
 
-El backend permite por defecto los orígenes locales `http://localhost:5173`, `http://127.0.0.1:5173` y `http://172.18.24.173:5173`. Para otros orígenes o producción, define `SMARTSTOCK_CORS_ORIGINS` en el `.env` de la raíz como una lista separada por comas de orígenes exactos, sin rutas ni comodines. Esta lista reemplaza los valores predeterminados. Reinicia los servidores después de cambiar sus variables de entorno.
+Si `SMARTSTOCK_CORS_ORIGINS` está vacía o no está definida, el backend permite `http://localhost:5173`, `http://127.0.0.1:5173` y `http://<IP-local-detectada>:5173`. Al arrancar, detecta la dirección IPv4 de salida mediante la ruta hacia `8.8.8.8`, sin enviar datos; si la detección falla, conserva los dos orígenes de localhost. Esta detección elige una interfaz y puede corresponder a una VPN o a la red de un contenedor. Para otras interfaces, dominios, puertos o producción, define `SMARTSTOCK_CORS_ORIGINS` en el `.env` de la raíz como una lista separada por comas de orígenes exactos, sin rutas ni comodines. Una lista explícita reemplaza todos los valores predeterminados y evita la detección automática. Por ejemplo:
+
+```dotenv
+SMARTSTOCK_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://192.168.1.9:5173
+```
+
+Reinicia los servidores después de cambiar las variables de entorno o la conexión de red para actualizar los orígenes permitidos.
 
 ## Configuración de Supabase
 

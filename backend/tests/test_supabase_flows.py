@@ -33,11 +33,7 @@ class SupabaseApiTests(unittest.TestCase):
         main.SUPABASE_SECRET_KEY = "sb_secret_test"
 
     def test_cors_preflight_allows_configured_frontend_origins_and_headers(self):
-        for origin in (
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://172.18.24.173:5173",
-        ):
+        for origin in main.cors_origins:
             with self.subTest(origin=origin):
                 response = self.client.options(
                     "/api/sales",
@@ -55,16 +51,17 @@ class SupabaseApiTests(unittest.TestCase):
 
     def test_cors_headers_are_present_on_unhandled_server_errors(self):
         self.configure_cloud()
+        origin = main.cors_origins[0]
         main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
             "id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"
         }
         with patch.object(main, "load_products_from_cloud", new=AsyncMock(side_effect=RuntimeError("test failure"))):
             response = TestClient(main.app, raise_server_exceptions=False).get(
                 "/api/products",
-                headers={"Origin": "http://172.18.24.173:5173"},
+                headers={"Origin": origin},
             )
         self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.headers["access-control-allow-origin"], "http://172.18.24.173:5173")
+        self.assertEqual(response.headers["access-control-allow-origin"], origin)
 
     def test_partial_supabase_configuration_never_uses_demo_storage(self):
         main.SUPABASE_URL = "https://project.invalid"

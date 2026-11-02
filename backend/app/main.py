@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from pathlib import Path
@@ -21,19 +22,38 @@ DATA_FILE = DATA_DIR / "store.json"
 
 load_dotenv(ROOT_DIR / ".env")
 
+
+def detect_lan_origin() -> str | None:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as lan_socket:
+            # UDP connect selects an outgoing IPv4 interface without sending data.
+            lan_socket.connect(("8.8.8.8", 80))
+            return f"http://{lan_socket.getsockname()[0]}:5173"
+    except OSError:
+        return None
+
+
+def get_cors_origins() -> list[str]:
+    configured_origins = [
+        origin.strip().rstrip("/")
+        for origin in os.getenv("SMARTSTOCK_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    if "*" in configured_origins:
+        raise ValueError("SMARTSTOCK_CORS_ORIGINS debe contener orígenes exactos; no se permite '*'.")
+    if configured_origins:
+        return configured_origins
+
+    origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    lan_origin = detect_lan_origin()
+    if lan_origin and lan_origin not in origins:
+        origins.append(lan_origin)
+    return origins
+
+
 app = FastAPI(title="SmartStock Ferretería API", version="1.0.0")
 fastapi_app = app
-cors_origins = [
-    origin.strip().rstrip("/")
-    for origin in os.getenv("SMARTSTOCK_CORS_ORIGINS", "").split(",")
-    if origin.strip()
-] or [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://172.18.24.173:5173",
-]
-if "*" in cors_origins:
-    raise ValueError("SMARTSTOCK_CORS_ORIGINS debe contener orígenes exactos; no se permite '*'.")
+cors_origins = get_cors_origins()
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
