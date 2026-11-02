@@ -14,7 +14,7 @@ Aplicación web full-stack para controlar inventario y ventas de una ferretería
 - `frontend/`: aplicación web del cliente
 - `backend/`: API REST en Python
 - `backend/data/store.json`: datos persistidos del modo demo local
-- `backend/tests/test_supabase_flows.py`: pruebas de autenticación, permisos e integración con servicios simulados
+- `backend/tests/`: pruebas de CORS, autenticación, permisos e integración con servicios simulados
 - `supabase/migrations/`: SQL para PostgreSQL/Supabase
 - `.env.example`: variables de entorno de ejemplo
 
@@ -187,7 +187,7 @@ python -m unittest discover -s backend/tests -v
 npm run build
 ```
 
-Las pruebas del backend cubren autenticación, roles, CORS, selección del modo de almacenamiento, registro de ventas y subida de imágenes mediante servicios simulados. No aplican las migraciones ni validan una conexión real a Supabase; tampoco incluyen pruebas automatizadas de la interfaz. Ejecútalas sin forzar `SMARTSTOCK_LOCAL_DEMO` y con los orígenes CORS predeterminados, ya que la suite comprueba tanto el modo demo como el modo Supabase y esos orígenes.
+Las pruebas del backend cubren autenticación, roles, CORS (detección local, fallo de detección, configuración explícita y rechazo de orígenes no permitidos), selección del modo de almacenamiento, registro de ventas y subida de imágenes mediante servicios simulados. No aplican las migraciones ni validan una conexión real a Supabase; tampoco incluyen pruebas automatizadas de la interfaz. Ejecútalas sin forzar `SMARTSTOCK_LOCAL_DEMO`, ya que la suite comprueba tanto el modo demo como el modo Supabase.
 
 `npm run build` genera el frontend en `frontend/dist/`. Para previsualizarlo, ejecuta `npm run preview` y abre `http://localhost:4173`. La previsualización solo sirve el frontend: mantén el backend en ejecución. Como este build usa la configuración de producción, define `VITE_API_BASE_URL=http://localhost:8000` en `frontend/.env` antes de compilar para probar con el backend local, y añade `http://localhost:4173` a `SMARTSTOCK_CORS_ORIGINS` en el `.env` de la raíz. Sin `VITE_API_BASE_URL`, las peticiones del build se envían al mismo origen y requieren un proxy que dirija `/api` al backend.
 
