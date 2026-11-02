@@ -211,7 +211,7 @@ APP_STATE = load_state()
 
 async def resolve_profile_from_supabase(service: Client, user_id: str, email: str) -> dict[str, str]:
     existing = service.table("profiles").select("*").eq("id", user_id).maybe_single().execute()
-    profile = existing.data
+    profile = existing.data if existing is not None else None
     if profile:
         role = profile.get("role")
         if role not in {"admin", "seller"}:
@@ -500,7 +500,7 @@ async def get_product(product_id: str, _: dict[str, str] = Depends(get_current_u
     if not use_local_demo():
         service = get_service_supabase()
         result = service.table("products").select("*").eq("id", product_id).maybe_single().execute()
-        product = result.data
+        product = result.data if result is not None else None
         if not product:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
         return product
@@ -741,7 +741,7 @@ async def get_sale(sale_id: str, user: dict[str, str] = Depends(get_current_user
     if not use_local_demo():
         service = get_service_supabase()
         result = service.table("sales").select("*, sale_details(*, products(name))").eq("id", sale_id).maybe_single().execute()
-        sale = result.data
+        sale = result.data if result is not None else None
         if not sale or (user.get("role") != "admin" and str(sale.get("seller_id", "")) != user["id"]):
             raise HTTPException(status_code=404, detail="Venta no encontrada")
         return sale
