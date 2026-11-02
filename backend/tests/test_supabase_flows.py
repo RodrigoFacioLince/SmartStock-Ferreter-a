@@ -120,6 +120,41 @@ class SupabaseApiTests(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "La contraseña es obligatoria")
         create_client.assert_not_called()
 
+    def test_first_login_creates_seller_profile_when_lookup_returns_none(self):
+        self.configure_cloud()
+        for endpoint in ("/api/auth/login", "/api/me"):
+            with self.subTest(endpoint=endpoint):
+                auth_user = SimpleNamespace(id="new-user-id", email="new-user@example.test")
+                auth_client = Mock()
+                auth_client.auth.sign_in_with_password.return_value = SimpleNamespace(
+                    session=SimpleNamespace(access_token="verified-access-token"), user=auth_user,
+                )
+                auth_client.auth.get_user.return_value = SimpleNamespace(user=auth_user)
+                service = Mock()
+                service.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = None
+                with (
+                    patch.object(main, "create_client", return_value=auth_client),
+                    patch.object(main, "get_service_supabase", return_value=service),
+                ):
+                    if endpoint == "/api/auth/login":
+                        response = self.client.post(endpoint, json={
+                            "email": auth_user.email, "password": "test-password",
+                        })
+                    else:
+                        response = self.client.get(endpoint, headers={
+                            "Authorization": "Bearer verified-access-token",
+                        })
+                self.assertEqual(response.status_code, 200)
+                profile = response.json()["user"] if endpoint == "/api/auth/login" else response.json()
+                self.assertEqual(profile["id"], auth_user.id)
+                self.assertEqual(profile["role"], "seller")
+                service.table.return_value.insert.assert_called_once_with({
+                    "id": auth_user.id,
+                    "email": auth_user.email,
+                    "full_name": "new-user",
+                    "role": "seller",
+                })
+
     def test_dashboard_requires_authentication(self):
         response = self.client.get("/api/dashboard")
         self.assertEqual(response.status_code, 401)
@@ -143,6 +178,20 @@ class SupabaseApiTests(unittest.TestCase):
             response = self.client.get("/api/products")
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"], "cloud unavailable")
+
+    def test_missing_cloud_products_and_sales_return_not_found(self):
+        self.configure_cloud()
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
+            "id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"
+        }
+        for endpoint, table in (("/api/products/missing-id", "products"), ("/api/sales/missing-id", "sales")):
+            with self.subTest(endpoint=endpoint):
+                service = Mock()
+                service.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = None
+                with patch.object(main, "get_service_supabase", return_value=service):
+                    response = self.client.get(endpoint)
+                self.assertEqual(response.status_code, 404)
+                service.table.assert_called_once_with(table)
 
     def test_seller_cannot_create_products_even_with_service_key_configured(self):
         self.configure_cloud()
@@ -257,14 +306,16 @@ class SupabaseAuthTests(unittest.TestCase):
         self.assertEqual(create_client.call_args_list[1].args[1], "sb_secret_test")
 
     def test_new_admin_named_account_is_created_as_seller(self):
-        service = Mock()
-        service.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = None
-        profile = asyncio.run(
-            main.resolve_profile_from_supabase(service, "new-user-id", "admin@example.test")
-        )
-        payload = service.table.return_value.insert.call_args.args[0]
-        self.assertEqual(payload["role"], "seller")
-        self.assertEqual(profile["role"], "seller")
+        for lookup_response in (None, SimpleNamespace(data=None)):
+            with self.subTest(lookup_response=lookup_response):
+                service = Mock()
+                service.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = lookup_response
+                profile = asyncio.run(
+                    main.resolve_profile_from_supabase(service, "new-user-id", "admin@example.test")
+                )
+                payload = service.table.return_value.insert.call_args.args[0]
+                self.assertEqual(payload["role"], "seller")
+                self.assertEqual(profile["role"], "seller")
 
     def test_invalid_token_is_unauthorized_but_auth_outage_is_unavailable(self):
         auth_client = Mock()
