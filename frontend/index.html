@@ -340,18 +340,19 @@
             <div class="panel-card">
               <div class="filters-row">
                 <input id="sales-date-filter" type="date" />
-                <input id="sales-seller-filter" type="search" placeholder="Buscar vendedor por nombre o correo" aria-label="Buscar vendedor por nombre o correo" />
+                <input id="sales-search-filter" type="search" placeholder="Buscar por ID, comprador o método de pago" aria-label="Buscar por ID, comprador o método de pago" />
                 <button id="clear-sales-filter" class="secondary-btn">Limpiar</button>
               </div>
               <div class="table-wrap">
-                <table>
+                <table class="sales-history-table">
                   <thead>
                     <tr>
                       <th>ID</th>
-                      <th>Fecha</th>
+                      <th>Fecha y hora</th>
                       <th>Vendedor</th>
-                      <th>Productos</th>
+                      <th>Método de pago</th>
                       <th>Total</th>
+                      <th>Productos</th>
                     </tr>
                   </thead>
                   <tbody id="sales-history-body"></tbody>
@@ -391,6 +392,13 @@
           <span id="product-gallery-count"></span>
           <button type="button" id="product-gallery-next" class="secondary-btn" aria-label="Imagen siguiente">Siguiente</button>
         </div>
+      </article>
+    </dialog>
+
+    <dialog id="sale-detail-dialog" class="sale-detail-dialog" aria-labelledby="sale-detail-title">
+      <article class="sale-detail-panel">
+        <button type="button" id="close-sale-detail-btn" class="detail-close-btn" aria-label="Cerrar productos de la venta">×</button>
+        <div id="sale-detail-content"></div>
       </article>
     </dialog>
 

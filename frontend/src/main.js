@@ -91,7 +91,10 @@ const els = {
   salePaymentMethod: document.querySelector('#sale-payment-method'),
   salesHistoryBody: document.querySelector('#sales-history-body'),
   salesDateFilter: document.querySelector('#sales-date-filter'),
-  salesSellerFilter: document.querySelector('#sales-seller-filter'),
+  salesSearchFilter: document.querySelector('#sales-search-filter'),
+  saleDetailDialog: document.querySelector('#sale-detail-dialog'),
+  saleDetailContent: document.querySelector('#sale-detail-content'),
+  closeSaleDetailBtn: document.querySelector('#close-sale-detail-btn'),
   assistantForm: document.querySelector('#assistant-form'),
   assistantInput: document.querySelector('#assistant-input'),
   assistantMessages: document.querySelector('#assistant-messages'),
@@ -814,41 +817,103 @@ async function loadSales() {
 
 function renderSalesHistory() {
   const filterDate = els.salesDateFilter.value;
-  const sellerSearch = els.salesSellerFilter.value.trim().toLocaleLowerCase();
+  const search = els.salesSearchFilter.value.trim().toLocaleLowerCase();
   const filtered = appState.sales.filter((sale) => {
     const matchesDate = !filterDate || (sale.created_at || sale.date || '').startsWith(filterDate);
-    const sellerName = sale.seller_name || sale.seller || '';
-    const sellerEmail = sale.seller_email || '';
-    const matchesSeller = !sellerSearch
-      || `${sellerName} ${sellerEmail}`.toLocaleLowerCase().includes(sellerSearch);
-    return matchesDate && matchesSeller;
+    const paymentMethod = String(sale.payment_method || '');
+    const paymentLabel = getPaymentMethodLabel(paymentMethod);
+    const searchableFields = `${sale.id || ''} ${sale.buyer_name || ''} ${paymentMethod} ${paymentLabel}`.toLocaleLowerCase();
+    return matchesDate && (!search || searchableFields.includes(search));
   });
 
   if (!filtered.length) {
-    els.salesHistoryBody.innerHTML = '<tr><td colspan="5">No hay ventas con esos filtros.</td></tr>';
+    els.salesHistoryBody.innerHTML = '<tr><td colspan="6">No hay ventas con esos filtros.</td></tr>';
     return;
   }
 
   els.salesHistoryBody.innerHTML = filtered
     .map((sale) => {
-      const items = sale.items || sale.sale_details || [];
-      const text = items
-        .map((item) => `${item.product_name || item.products?.name || 'Producto'} x${item.quantity}`)
-        .join(', ');
       const total = sale.total || 0;
       const date = sale.created_at || sale.date;
-      const seller = sale.seller_name || sale.seller || sale.seller_email || 'Vendedor';
+      const seller = getSaleSellerName(sale);
+      const paymentMethod = getPaymentMethodLabel(sale.payment_method);
       return `
         <tr>
           <td>${escapeHTML(sale.id)}</td>
           <td>${new Date(date).toLocaleString('es-CO')}</td>
           <td>${escapeHTML(seller)}</td>
-          <td>${escapeHTML(text)}</td>
+          <td>${escapeHTML(paymentMethod)}</td>
           <td>${formatMoney(total)}</td>
+          <td><button type="button" class="action-btn" data-sale-details="${escapeHTML(sale.id)}">Ver productos</button></td>
         </tr>
       `;
     })
     .join('');
+}
+
+function getSaleSellerName(sale) {
+  const sellerName = String(sale.seller_name || '').trim();
+  const seller = String(sale.seller || '').trim();
+  const sellerEmail = String(sale.seller_email || '').trim();
+  const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+  const name = sellerName || seller;
+  if (name && !uuidPattern.test(name)) return name;
+  return sellerEmail || 'Vendedor';
+}
+
+function getPaymentMethodLabel(paymentMethod) {
+  const labels = {
+    efectivo: 'Efectivo',
+    tarjeta: 'Tarjeta',
+    transferencia: 'Transferencia',
+  };
+  const method = String(paymentMethod || '').trim().toLocaleLowerCase();
+  return labels[method] || (method ? String(paymentMethod) : 'No especificado');
+}
+
+function openSaleDetails(saleId) {
+  const sale = appState.sales.find((entry) => String(entry.id) === String(saleId));
+  if (!sale) {
+    showToast('No se encontró la venta seleccionada. Actualiza el historial e inténtalo de nuevo.', 'error');
+    return;
+  }
+  const items = Array.isArray(sale.items)
+    ? sale.items
+    : Array.isArray(sale.sale_details) ? sale.sale_details : [];
+  const itemRows = items.map((item) => {
+    const quantity = Number(item.quantity || 0);
+    const unitPrice = Number(item.unit_price || 0);
+    const subtotal = Number(item.subtotal ?? item.total ?? unitPrice * quantity);
+    const productName = item.product_name || item.products?.name || 'Producto';
+    return `
+      <tr>
+        <td>${escapeHTML(productName)}</td>
+        <td>${quantity}</td>
+        <td>${formatMoney(unitPrice)}</td>
+        <td>${formatMoney(subtotal)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  els.saleDetailContent.innerHTML = `
+    <p class="eyebrow">Detalle de venta</p>
+    <h2 id="sale-detail-title">Venta ${escapeHTML(sale.id)}</h2>
+    <div class="sale-detail-table-wrap">
+      <table class="sale-detail-table">
+        <thead>
+          <tr><th>Producto</th><th>Cantidad</th><th>Precio unitario</th><th>Subtotal</th></tr>
+        </thead>
+        <tbody>${itemRows || '<tr><td colspan="4">No hay productos registrados para esta venta.</td></tr>'}</tbody>
+      </table>
+    </div>
+    <p class="sale-detail-total"><span>Total de la venta</span><strong>${formatMoney(sale.total)}</strong></p>
+  `;
+  if (!els.saleDetailDialog.open) els.saleDetailDialog.showModal();
+  els.closeSaleDetailBtn.focus();
+}
+
+function closeSaleDetails() {
+  if (els.saleDetailDialog.open) els.saleDetailDialog.close();
 }
 
 function populateSalesSelector() {
@@ -1347,7 +1412,8 @@ els.productDetailDialog.addEventListener('click', (event) => {
 document.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
-  if (target.dataset.openProduct) openProductDetails(target.dataset.openProduct);
+  if (target.dataset.saleDetails) openSaleDetails(target.dataset.saleDetails);
+  else if (target.dataset.openProduct) openProductDetails(target.dataset.openProduct);
   else if (target.dataset.homeAdd) addHomeItem(target.dataset.homeAdd);
   else if (target.dataset.homeIncrease) changeHomeItem(target.dataset.homeIncrease, 1);
   else if (target.dataset.homeDecrease) changeHomeItem(target.dataset.homeDecrease, -1);
@@ -1367,11 +1433,21 @@ document.addEventListener('click', (event) => {
   else if (target.dataset.imageRemove !== undefined) removeProductImage(Number(target.dataset.imageRemove));
   else if (target.dataset.imageCover !== undefined) setProductImageCover(Number(target.dataset.imageCover));
 });
+els.closeSaleDetailBtn.addEventListener('click', closeSaleDetails);
+els.saleDetailDialog.addEventListener('click', (event) => {
+  if (event.target === els.saleDetailDialog) closeSaleDetails();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && els.saleDetailDialog.open) {
+    event.preventDefault();
+    closeSaleDetails();
+  }
+});
 els.salesDateFilter.addEventListener('change', renderSalesHistory);
-els.salesSellerFilter.addEventListener('input', renderSalesHistory);
+els.salesSearchFilter.addEventListener('input', renderSalesHistory);
 document.querySelector('#clear-sales-filter').addEventListener('click', () => {
   els.salesDateFilter.value = '';
-  els.salesSellerFilter.value = '';
+  els.salesSearchFilter.value = '';
   renderSalesHistory();
 });
 els.assistantForm.addEventListener('submit', handleAssistantSubmit);
