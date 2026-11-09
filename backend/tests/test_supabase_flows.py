@@ -159,15 +159,19 @@ class SupabaseApiTests(unittest.TestCase):
         response = self.client.get("/api/dashboard")
         self.assertEqual(response.status_code, 401)
 
-    def test_assistant_is_reported_as_demo_and_not_configured_ai(self):
+    def test_assistant_reports_missing_gemini_configuration(self):
         main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
             "id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"
         }
-        status_response = self.client.get("/api/health")
-        chat_response = self.client.post("/api/assistant/chat", json={"message": "recomienda algo"})
+        with (
+            patch.object(main, "GEMINI_API_KEY", ""),
+            patch.object(main, "GEMINI_MODEL", ""),
+        ):
+            status_response = self.client.get("/api/health")
+            chat_response = self.client.post("/api/assistant/chat", json={"message": "recomienda algo"})
         self.assertFalse(status_response.json()["ai_configured"])
-        self.assertEqual(chat_response.status_code, 200)
-        self.assertEqual(chat_response.json()["source"], "demo")
+        self.assertEqual(chat_response.status_code, 503)
+        self.assertIn("GEMINI_API_KEY y GEMINI_MODEL", chat_response.json()["detail"])
 
     def test_supabase_product_failure_is_not_replaced_with_demo_data(self):
         self.configure_cloud()
@@ -213,17 +217,67 @@ class SupabaseApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         create_client.assert_not_called()
 
+    def test_local_product_update_can_remove_the_last_gallery_image(self):
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
+            "id": "admin-id", "email": "admin@example.test", "name": "Admin", "role": "admin"
+        }
+        product = {
+            "id": "product-id",
+            "name": "Producto",
+            "description": "",
+            "category": "Herramientas",
+            "price": 12,
+            "quantity": 3,
+            "min_stock": 1,
+            "image_url": "https://example.test/cover.png",
+            "image_urls": ["https://example.test/cover.png"],
+        }
+        with (
+            patch.object(main, "use_local_demo", return_value=True),
+            patch.object(main, "find_product_by_id", return_value=product),
+            patch.object(main, "product_exists_by_name", return_value=False),
+            patch.object(main, "save_state"),
+        ):
+            response = self.client.put(
+                "/api/products/product-id",
+                json={
+                    "name": "Producto",
+                    "description": "",
+                    "category": "Herramientas",
+                    "price": 12,
+                    "quantity": 3,
+                    "min_stock": 1,
+                    "image_url": "",
+                    "image_urls": [],
+                    "removed_image_urls": ["https://example.test/cover.png"],
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["product"]["image_url"], "")
+        self.assertEqual(response.json()["product"]["image_urls"], [])
+
     def test_sales_query_is_limited_to_seller_when_service_key_bypasses_rls(self):
         self.configure_cloud()
         sales_query = Mock()
         sales_query.eq.return_value = sales_query
         sales_query.execute.return_value.data = [{"id": "sale-id", "seller_id": "seller-id"}]
+        sales_table = Mock()
+        sales_table.select.return_value.order.return_value = sales_query
+        profile_table = Mock()
+        profile_table.select.return_value.in_.return_value.execute.return_value.data = [{
+            "id": "seller-id",
+            "full_name": "Vendedora",
+            "email": "seller@example.test",
+        }]
         service = Mock()
-        service.table.return_value.select.return_value.order.return_value = sales_query
+        service.table.side_effect = lambda table: sales_table if table == "sales" else profile_table
         with patch.object(main, "get_service_supabase", return_value=service):
             sales = asyncio.run(main.load_sales_from_cloud("seller-id"))
         self.assertEqual(sales[0]["seller_id"], "seller-id")
+        self.assertEqual(sales[0]["seller_name"], "Vendedora")
+        self.assertEqual(sales[0]["seller_email"], "seller@example.test")
         sales_query.eq.assert_called_once_with("seller_id", "seller-id")
+        profile_table.select.return_value.in_.assert_called_once_with("id", ["seller-id"])
 
     def test_sales_rpc_uses_authenticated_seller_id(self):
         self.configure_cloud()
@@ -234,13 +288,54 @@ class SupabaseApiTests(unittest.TestCase):
         with patch.object(main, "get_service_supabase", return_value=service):
             response = self.client.post(
                 "/api/sales",
-                json={"items": [{"product_id": "product-id", "quantity": 2}]},
+                json={
+                    "items": [{"product_id": "product-id", "quantity": 2}],
+                    "buyer_name": "  Ana Pérez ",
+                    "payment_method": "tarjeta",
+                },
             )
         self.assertEqual(response.status_code, 200)
         service.rpc.assert_called_once_with(
             "register_sale",
-            {"p_seller_id": "seller-id", "p_items": [{"product_id": "product-id", "quantity": 2}]},
+            {
+                "p_seller_id": "seller-id",
+                "p_items": [{"product_id": "product-id", "quantity": 2}],
+                "p_buyer_name": "Ana Pérez",
+                "p_payment_method": "tarjeta",
+            },
         )
+
+    def test_sales_allow_an_empty_optional_buyer_name_but_require_payment_method(self):
+        self.configure_cloud()
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
+            "id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"
+        }
+        service = Mock()
+        service.rpc.return_value.execute.return_value.data = {"id": "sale-id"}
+        with patch.object(main, "get_service_supabase", return_value=service):
+            response = self.client.post(
+                "/api/sales",
+                json={
+                    "items": [{"product_id": "product-id", "quantity": 1}],
+                    "payment_method": "efectivo",
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(service.rpc.call_args.args[1]["p_buyer_name"], None)
+        self.assertEqual(service.rpc.call_args.args[1]["p_payment_method"], "efectivo")
+
+    def test_sales_reject_unsupported_payment_method(self):
+        main.fastapi_app.dependency_overrides[main.get_current_user] = lambda: {
+            "id": "seller-id", "email": "seller@example.test", "name": "Seller", "role": "seller"
+        }
+        response = self.client.post(
+            "/api/sales",
+            json={
+                "items": [{"product_id": "product-id", "quantity": 1}],
+                "payment_method": "cheque",
+            },
+        )
+        self.assertEqual(response.status_code, 422)
 
     def test_admin_image_upload_uses_product_images_bucket(self):
         self.configure_cloud()

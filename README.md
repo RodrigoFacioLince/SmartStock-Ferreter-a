@@ -74,7 +74,7 @@ Reinicia los servidores después de cambiar las variables de entorno o la conexi
 
 ## Configuración de Supabase
 
-El backend carga las variables desde `.env` en la raíz del repositorio. El frontend Vite carga las variables públicas desde `frontend/.env`. No copies `SUPABASE_SECRET_KEY` al frontend ni a ninguna variable con prefijo `VITE_`: Vite incorpora esas variables en el código enviado al navegador.
+El backend carga las variables desde `.env` en la raíz del repositorio. El frontend Vite carga las variables públicas desde `frontend/.env`. No copies `SUPABASE_SECRET_KEY` ni `GEMINI_API_KEY` al frontend ni a ninguna variable con prefijo `VITE_`: Vite incorpora esas variables en el código enviado al navegador.
 
 Configura las variables con los valores de un mismo proyecto:
 
@@ -84,9 +84,12 @@ Configura las variables con los valores de un mismo proyecto:
 SUPABASE_URL=
 SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SECRET_KEY=
+GEMINI_API_KEY=
+GEMINI_MODEL=
 ```
 
 `SUPABASE_PUBLISHABLE_KEY` y `SUPABASE_SECRET_KEY` se obtienen en **Project Settings > API Keys**. La clave publicable se puede usar en el navegador; la clave secreta solo se usa en el backend y tiene privilegios elevados.
+Obtén `GEMINI_API_KEY` desde Google AI Studio y define `GEMINI_MODEL` con el modelo Gemini que quieras usar. Ambas variables se usan exclusivamente en el backend.
 
 **`frontend/.env` (solo frontend):**
 
@@ -105,8 +108,10 @@ Aplica en orden las migraciones de `supabase/migrations/` desde el SQL Editor de
 | `002_secure_profile_roles.sql` | Restringe la creación de perfiles y los cambios de rol. |
 | `003_fix_profile_admin_policy.sql` | Elimina la recursión en las políticas de perfiles, limita su lectura a la persona titular o administradores y hace público el bucket de imágenes. |
 | `004_fix_register_sale_order.sql` | Actualiza `register_sale` para validar productos y cantidades, comprobar el stock acumulado por producto y crear la venta antes de insertar sus detalles. |
+| `005_sale_buyer_and_payment_method.sql` | Agrega el comprador opcional y el método de pago, e incorpora una sobrecarga de `register_sale` que conserva las validaciones y el descuento transaccional de inventario. La función previa de dos argumentos permanece disponible. |
+| `006_product_image_gallery.sql` | Agrega una galería JSONB de hasta cinco imágenes y conserva como galería inicial la portada ya guardada. |
 
-En proyectos existentes, aplica las migraciones pendientes, incluida la cuarta; no vuelvas a ejecutar la inicial sobre un esquema ya creado. En Supabase, `register_sale` bloquea las filas de productos mientras comprueba existencias y registra la venta, sus detalles y el descuento de stock en una misma transacción.
+En proyectos existentes, aplica las migraciones pendientes en orden; no vuelvas a ejecutar la inicial sobre un esquema ya creado. Las migraciones `005` y `006` son necesarias antes de registrar ventas con los nuevos campos y usar galerías en Supabase, respectivamente. En Supabase, `register_sale` bloquea las filas de productos mientras comprueba existencias y registra la venta, sus detalles y el descuento de stock en una misma transacción.
 
 La pantalla de acceso solo ofrece inicio de sesión. Crea previamente la cuenta en Supabase Auth, por ejemplo desde **Authentication > Users**, con correo y contraseña.
 
@@ -120,9 +125,9 @@ where email = 'correo-del-administrador';
 
 Vuelve a iniciar sesión para que la interfaz muestre el nuevo rol. Los administradores gestionan productos, imágenes y existencias, y consultan todas las ventas. Los vendedores consultan el catálogo y el inventario, registran ventas y ven únicamente sus propias ventas y métricas de ventas.
 
-Las imágenes subidas se almacenan en `Storage > Buckets > product-images` y son públicas para lectura; la carga y modificación se limitan a administradores. Comprueba en el panel que el bucket exista y figure como público. También puedes guardar una URL de imagen externa, incluso en modo demo. La subida de archivos requiere Supabase configurado; la vista previa del archivo por sí sola no lo guarda. El formulario guarda primero el producto y después sube su imagen, por lo que un error en la subida no revierte el guardado del producto.
+Las imágenes subidas se almacenan en `Storage > Buckets > product-images` y son públicas para lectura; la carga y modificación se limitan a administradores. Comprueba en el panel que el bucket exista y figure como público. Cada producto puede tener hasta cinco imágenes y una portada; también puedes guardar URLs externas. La subida de archivos requiere Supabase configurado. El formulario guarda primero el producto y después sube sus imágenes, por lo que un error de Storage no revierte el guardado del producto.
 
-El archivo `.env.example` es una plantilla, no se carga automáticamente. La integración usa `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` y `SUPABASE_SECRET_KEY`; no usa las antiguas `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`.
+El archivo `.env.example` es una plantilla, no se carga automáticamente. La integración usa `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `GEMINI_API_KEY` y `GEMINI_MODEL`; no usa las antiguas `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## Acceso en modo demo local
 
@@ -152,19 +157,19 @@ El modo demo ignora Supabase mientras esas variables estén activas en el proces
 
 ## Modo demo e integración de IA
 
-Sin ninguna variable de Supabase, el backend opera en modo demo local y conserva datos en `backend/data/store.json`. El asistente usa respuestas locales de demostración. No hay integración activa con OpenAI ni variables OpenAI leídas por el código; antes de añadir `OPENAI_API_KEY` se debe implementar una llamada real desde el backend y definir su modelo, manejo de errores y límites.
+Sin ninguna variable de Supabase, el backend opera en modo demo local y conserva datos en `backend/data/store.json`. Si `GEMINI_API_KEY` y `GEMINI_MODEL` están configurados, el asistente consulta Gemini para preguntas de ferretería. El backend rechaza preguntas ajenas y consultas de datos sensibles antes de llamar al modelo; solo una consulta de catálogo lee productos de Supabase y únicamente envía a Gemini campos permitidos de hasta cinco productos relevantes. Las preguntas técnicas generales no consultan Supabase. El asistente nunca registra ventas ni modifica productos o existencias.
 
 ## Funcionalidades destacadas
 
 - Login con roles `admin` y `seller`.
-- Dashboard con métricas del almacenamiento configurado y catálogo visual con búsqueda por nombre y filtro de categoría.
+- Inicio con métricas de productos, ventas del día, stock bajo y productos agotados, además de catálogo con búsqueda por nombre y categoría.
 - Carrito temporal en Inicio con controles de cantidad, eliminación de productos, vaciado y transferencia a Ventas.
-- Ficha de producto con imagen, descripción, categoría, precio, existencias y código o referencia, accesible desde el catálogo, inventario, carrito y resumen de venta.
-- Gestión de productos con imágenes por URL o archivo, vista previa antes de guardar y marcadores cuando una imagen falta o no carga.
-- Inventario con imágenes y estados de stock normal, bajo o agotado; el stock se considera bajo cuando es menor o igual al mínimo configurado.
-- Resumen de venta con cantidades editables, eliminación de líneas y validación de existencias antes de confirmar.
-- Historial de ventas con filtro por fecha y actualización de catálogo, inventario y métricas después de registrar una venta.
-- Asistente de demostración con respuestas basadas en el catálogo; todavía no consume OpenAI.
+- Ficha de producto con galería de hasta cinco imágenes, descripción amplia, categoría, precio, existencias y código o referencia.
+- Gestión de productos con carga múltiple, portada y eliminación de imágenes en Storage.
+- Inventario con búsqueda y filtros combinables por categoría y estado; el stock bajo sigue el umbral `quantity <= min_stock`.
+- Resumen de venta con nombre de comprador opcional, método de pago obligatorio, controles de carga, cantidades editables y validación de existencias.
+- Historial de ventas con filtros por fecha y nombre/correo del vendedor.
+- Asistente Gemini de ferretería con restricciones de temas, límites de catálogo y respuestas breves.
 
 Los importes se muestran actualmente en pesos colombianos (`COP`, formato `es-CO`).
 
@@ -173,10 +178,10 @@ Los importes se muestran actualmente en pesos colombianos (`COP`, formato `es-CO
 1. En **Inicio**, busca productos o filtra por categoría y agrégalos al **Carrito temporal**. Puedes aumentar o reducir cantidades, quitar productos o vaciarlo.
 2. Pulsa **Continuar en Ventas**. La aplicación vuelve a consultar el catálogo y valida las existencias antes de combinar el carrito con los productos que ya hubiera en el resumen de venta. Si la suma supera el stock, muestra un aviso y conserva el carrito para corregirlo. Si la transferencia termina, vacía el carrito de Inicio.
 3. En **Ventas**, también puedes agregar productos directamente y ajustar las cantidades con los controles `+` y `−`, o quitar líneas. Las cantidades deben ser enteros positivos y no superar las existencias disponibles.
-4. Pulsa **Confirmar venta**. La aplicación consulta de nuevo productos y precios, valida las cantidades y deshabilita el botón mientras envía la operación. El backend registra la venta y descuenta el inventario.
+4. Indica el método de pago, agrega opcionalmente el nombre del comprador y pulsa **Confirmar venta**. La aplicación consulta de nuevo productos y precios, valida las cantidades y bloquea envíos duplicados. El backend registra la venta y descuenta el inventario dentro de la función transaccional.
 5. Tras una respuesta exitosa, se limpia el resumen y se abre **Historial**. Se actualizan las ventas, los productos y las métricas. Si falla esta actualización posterior, el aviso indica que la venta sí quedó registrada.
 
-El carrito y el resumen son temporales: no reservan ni descuentan stock hasta confirmar y se pierden al recargar la página. El campo **Notas** se guarda en modo demo; actualmente no se persiste en Supabase porque la función de registro solo recibe vendedor y productos.
+El carrito y el resumen son temporales: no reservan ni descuentan stock hasta confirmar y se pierden al recargar la página. Las columnas nuevas de comprador y método de pago requieren aplicar la migración `005_sale_buyer_and_payment_method.sql`; las ventas anteriores mantienen esos campos vacíos.
 
 ## Pruebas y compilación
 

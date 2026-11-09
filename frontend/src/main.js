@@ -23,7 +23,15 @@ const appState = {
   draftItems: [],
   homeCart: [],
   saleSubmitting: false,
-  productImagePreviewUrl: '',
+  productSubmitting: false,
+  productImages: [],
+  removedProductImageUrls: [],
+  productImagePreviewUrls: [],
+  productGalleryIndex: 0,
+  activeOperations: new Map(),
+  toastTimeout: null,
+  deletingProducts: new Set(),
+  updatingInventory: new Set(),
 };
 
 const els = {
@@ -38,7 +46,10 @@ const els = {
   statProducts: document.querySelector('#stat-products'),
   statSalesDay: document.querySelector('#stat-sales-day'),
   statLowStock: document.querySelector('#stat-low-stock'),
-  statTotalSales: document.querySelector('#stat-total-sales'),
+  statOutOfStock: document.querySelector('#stat-out-of-stock'),
+  operationIndicator: document.querySelector('#operation-indicator'),
+  operationIndicatorText: document.querySelector('#operation-indicator-text'),
+  operationToast: document.querySelector('#operation-toast'),
   homeProductSearch: document.querySelector('#home-product-search'),
   homeCategoryFilter: document.querySelector('#home-category-filter'),
   homeProductGrid: document.querySelector('#home-product-grid'),
@@ -49,6 +60,9 @@ const els = {
   productSearch: document.querySelector('#product-search'),
   productCategoryFilter: document.querySelector('#product-category-filter'),
   inventoryTableBody: document.querySelector('#inventory-table-body'),
+  inventorySearch: document.querySelector('#inventory-search'),
+  inventoryCategoryFilter: document.querySelector('#inventory-category-filter'),
+  inventoryStatusFilter: document.querySelector('#inventory-status-filter'),
   productForm: document.querySelector('#product-form'),
   productId: document.querySelector('#product-id'),
   productName: document.querySelector('#product-name'),
@@ -59,11 +73,13 @@ const els = {
   productMinStock: document.querySelector('#product-min-stock'),
   productImageUrl: document.querySelector('#product-image-url'),
   productImageFile: document.querySelector('#product-image-file'),
-  productImagePreviewWrap: document.querySelector('#product-image-preview-wrap'),
-  productImagePreview: document.querySelector('#product-image-preview'),
-  removeProductImageBtn: document.querySelector('#remove-product-image-btn'),
+  productImageGallery: document.querySelector('#product-image-gallery'),
   productDetailDialog: document.querySelector('#product-detail-dialog'),
   productDetailContent: document.querySelector('#product-detail-content'),
+  productGalleryControls: document.querySelector('#product-gallery-controls'),
+  productGalleryPrevious: document.querySelector('#product-gallery-previous'),
+  productGalleryNext: document.querySelector('#product-gallery-next'),
+  productGalleryCount: document.querySelector('#product-gallery-count'),
   closeProductDetailBtn: document.querySelector('#close-product-detail-btn'),
   saleForm: document.querySelector('#sale-form'),
   saleProduct: document.querySelector('#sale-product'),
@@ -71,8 +87,11 @@ const els = {
   saleItemsBody: document.querySelector('#sale-items-body'),
   saleTotal: document.querySelector('#sale-total'),
   saleNotes: document.querySelector('#sale-notes'),
+  saleBuyerName: document.querySelector('#sale-buyer-name'),
+  salePaymentMethod: document.querySelector('#sale-payment-method'),
   salesHistoryBody: document.querySelector('#sales-history-body'),
   salesDateFilter: document.querySelector('#sales-date-filter'),
+  salesSellerFilter: document.querySelector('#sales-seller-filter'),
   assistantForm: document.querySelector('#assistant-form'),
   assistantInput: document.querySelector('#assistant-input'),
   assistantMessages: document.querySelector('#assistant-messages'),
@@ -107,11 +126,25 @@ function getProduct(productId) {
 }
 
 function imageMarkup(product, className = 'product-thumb') {
-  const imageUrl = String(product.image_url || '').trim();
+  const imageUrl = String(product.image_url || product.image_urls?.[0] || '').trim();
   if (!imageUrl) {
     return `<div class="${className} image-placeholder" aria-label="Producto sin imagen">Sin imagen</div>`;
   }
   return `<img class="${className} product-image" src="${escapeHTML(imageUrl)}" alt="${escapeHTML(product.name || 'Imagen del producto')}" loading="lazy" />`;
+}
+
+function getProductImageUrls(product) {
+  const urls = Array.isArray(product.image_urls)
+    ? product.image_urls.filter((url) => typeof url === 'string' && url.trim())
+    : [];
+  const uniqueUrls = [...new Set(urls)];
+  const cover = String(product.image_url || '').trim();
+  if (cover) {
+    const coverIndex = uniqueUrls.indexOf(cover);
+    if (coverIndex >= 0) uniqueUrls.splice(coverIndex, 1);
+    uniqueUrls.unshift(cover);
+  }
+  return uniqueUrls.slice(0, 5);
 }
 
 function attachImageFallbacks(container) {
@@ -128,12 +161,67 @@ function attachImageFallbacks(container) {
 
 function renderProductCategories() {
   const categories = [...new Set(appState.products.map((product) => product.category).filter(Boolean))].sort();
-  for (const select of [els.productCategoryFilter, els.homeCategoryFilter]) {
+  for (const select of [els.productCategoryFilter, els.homeCategoryFilter, els.inventoryCategoryFilter]) {
     const currentValue = select.value;
     select.innerHTML = '<option value="">Todas las categorías</option>' +
       categories.map((category) => `<option value="${escapeHTML(category)}">${escapeHTML(category)}</option>`).join('');
     select.value = categories.includes(currentValue) ? currentValue : '';
   }
+}
+
+function startOperation(label) {
+  const operationId = Symbol(label);
+  appState.activeOperations.set(operationId, label);
+  els.operationIndicatorText.textContent = appState.activeOperations.values().next().value || label;
+  els.operationIndicator.classList.remove('hidden');
+  return () => {
+    appState.activeOperations.delete(operationId);
+    if (appState.activeOperations.size) {
+      els.operationIndicatorText.textContent = appState.activeOperations.values().next().value;
+    } else {
+      els.operationIndicator.classList.add('hidden');
+    }
+  };
+}
+
+function showToast(message, type = 'success') {
+  window.clearTimeout(appState.toastTimeout);
+  els.operationToast.textContent = message;
+  els.operationToast.className = `operation-toast ${type}`;
+  appState.toastTimeout = window.setTimeout(() => {
+    els.operationToast.classList.add('hidden');
+  }, 5000);
+}
+
+function setControlsDisabled(container, disabled) {
+  container.querySelectorAll('input, textarea, select, button').forEach((control) => {
+    if (disabled) {
+      control.dataset.wasDisabled = String(control.disabled);
+      control.disabled = true;
+    } else {
+      control.disabled = control.dataset.wasDisabled === 'true';
+      delete control.dataset.wasDisabled;
+    }
+  });
+}
+
+function setButtonBusy(button, busy, label = 'Procesando...') {
+  if (!button) return;
+  if (busy) {
+    if (button.dataset.busy === 'true') return;
+    button.dataset.busy = 'true';
+    button.dataset.originalContent = button.innerHTML;
+    button.dataset.originalDisabled = String(button.disabled);
+    button.disabled = true;
+    button.innerHTML = `<span class="button-loading"><span class="loading-spinner" aria-hidden="true"></span>${escapeHTML(label)}</span>`;
+    return;
+  }
+  if (button.dataset.busy !== 'true') return;
+  button.innerHTML = button.dataset.originalContent || '';
+  button.disabled = button.dataset.originalDisabled === 'true';
+  delete button.dataset.busy;
+  delete button.dataset.originalContent;
+  delete button.dataset.originalDisabled;
 }
 
 function setView(viewName) {
@@ -353,24 +441,34 @@ async function handleLogin(event) {
 }
 
 async function loadDashboard() {
-  const dashboard = await apiFetch('/api/dashboard');
-  els.statProducts.textContent = dashboard.products_count;
-  els.statSalesDay.textContent = dashboard.sales_today;
-  els.statLowStock.textContent = dashboard.low_stock_count;
-  els.statTotalSales.textContent = formatMoney(dashboard.total_revenue);
+  const finishLoading = startOperation('Cargando métricas...');
+  try {
+    const dashboard = await apiFetch('/api/dashboard');
+    els.statProducts.textContent = dashboard.products_count;
+    els.statSalesDay.textContent = dashboard.sales_today;
+    els.statLowStock.textContent = dashboard.low_stock_count;
+    els.statOutOfStock.textContent = dashboard.out_of_stock_count;
+  } finally {
+    finishLoading();
+  }
 }
 
 async function loadProducts() {
-  const products = await apiFetch('/api/products');
-  appState.products = products;
-  renderProductCategories();
-  renderProductTable();
-  renderHomeCatalog();
-  renderHomeCart();
-  renderInventory();
-  populateSalesSelector();
-  renderDraftItems();
-  refreshOpenProductDetails();
+  const finishLoading = startOperation('Cargando catálogo e inventario...');
+  try {
+    const products = await apiFetch('/api/products');
+    appState.products = products;
+    renderProductCategories();
+    renderProductTable();
+    renderHomeCatalog();
+    renderHomeCart();
+    renderInventory();
+    populateSalesSelector();
+    renderDraftItems();
+    refreshOpenProductDetails();
+  } finally {
+    finishLoading();
+  }
 }
 
 function renderHomeCatalog() {
@@ -448,7 +546,21 @@ function renderProductTable() {
 }
 
 function renderInventory() {
+  const search = els.inventorySearch.value.trim().toLocaleLowerCase();
+  const category = els.inventoryCategoryFilter.value;
+  const statusFilter = els.inventoryStatusFilter.value;
   const list = appState.products
+    .filter((product) => {
+      const quantity = Number(product.quantity);
+      const minimum = Number(product.min_stock);
+      const matchesName = !search || String(product.name || '').toLocaleLowerCase().includes(search);
+      const matchesCategory = !category || product.category === category;
+      const matchesStatus = !statusFilter
+        || (statusFilter === 'out' && quantity === 0)
+        || (statusFilter === 'low' && quantity > 0 && quantity <= minimum)
+        || (statusFilter === 'available' && quantity > minimum);
+      return matchesName && matchesCategory && matchesStatus;
+    })
     .map((product) => {
       const status = Number(product.quantity) <= Number(product.min_stock) ? 'warning' : 'ok';
       const label = Number(product.quantity) === 0 ? 'Sin stock' : Number(product.quantity) <= Number(product.min_stock) ? 'Bajo' : 'Normal';
@@ -516,14 +628,18 @@ function renderHomeCart() {
 function renderProductDetails(product) {
   const coreFields = new Set([
     'id', 'name', 'description', 'category', 'price', 'quantity', 'min_stock',
-    'image_url', 'created_at', 'updated_at',
+    'image_url', 'image_urls', 'created_at', 'updated_at',
   ]);
   const extraFields = Object.entries(product)
     .filter(([key, value]) => !coreFields.has(key) && value !== null && typeof value !== 'object')
     .map(([key, value]) => `<div class="detail-field"><dt>${escapeHTML(key.replaceAll('_', ' '))}</dt><dd>${escapeHTML(value)}</dd></div>`)
     .join('');
-  const image = product.image_url
-    ? imageMarkup(product, 'product-detail-image')
+  const imageUrls = getProductImageUrls(product);
+  const galleryIndex = Math.min(Number(els.productDetailDialog.dataset.galleryIndex || 0), Math.max(0, imageUrls.length - 1));
+  els.productDetailDialog.dataset.galleryIndex = String(galleryIndex);
+  const imageUrl = imageUrls[galleryIndex];
+  const image = imageUrl
+    ? imageMarkup({ ...product, image_url: imageUrl }, 'product-detail-image')
     : '<div class="product-detail-image image-placeholder">Sin imagen</div>';
 
   els.productDetailContent.innerHTML = `
@@ -531,7 +647,6 @@ function renderProductDetails(product) {
     <div class="product-detail-copy">
       <p class="eyebrow">${escapeHTML(product.category || 'Producto')}</p>
       <h2 id="product-detail-title">${escapeHTML(product.name || 'Producto')}</h2>
-      <p class="product-detail-description">${escapeHTML(product.description || 'Sin descripción disponible.')}</p>
       <dl class="product-detail-fields">
         <div class="detail-field"><dt>Categoría</dt><dd>${escapeHTML(product.category || 'Sin categoría')}</dd></div>
         <div class="detail-field"><dt>Precio</dt><dd>${formatMoney(product.price)}</dd></div>
@@ -539,8 +654,14 @@ function renderProductDetails(product) {
         <div class="detail-field"><dt>Código / referencia</dt><dd>${escapeHTML(product.code || product.reference || product.sku || product.id)}</dd></div>
         ${extraFields}
       </dl>
+      <section class="product-detail-description">
+        <h3>Descripción</h3>
+        <p>${escapeHTML(product.description || 'Sin descripción disponible.')}</p>
+      </section>
     </div>
   `;
+  els.productGalleryControls.classList.toggle('hidden', imageUrls.length <= 1);
+  els.productGalleryCount.textContent = imageUrls.length > 1 ? `${galleryIndex + 1} de ${imageUrls.length}` : '';
   attachImageFallbacks(els.productDetailContent);
 }
 
@@ -551,6 +672,7 @@ function openProductDetails(productId) {
     return;
   }
   els.productDetailDialog.dataset.productId = product.id;
+  els.productDetailDialog.dataset.galleryIndex = '0';
   renderProductDetails(product);
   if (!els.productDetailDialog.open) {
     els.productDetailDialog.showModal();
@@ -566,6 +688,16 @@ function refreshOpenProductDetails() {
   } else {
     els.productDetailDialog.close();
   }
+}
+
+function changeProductGalleryImage(direction) {
+  const product = getProduct(els.productDetailDialog.dataset.productId);
+  if (!product) return;
+  const imageCount = getProductImageUrls(product).length;
+  if (imageCount <= 1) return;
+  const currentIndex = Number(els.productDetailDialog.dataset.galleryIndex || 0);
+  els.productDetailDialog.dataset.galleryIndex = String((currentIndex + direction + imageCount) % imageCount);
+  renderProductDetails(product);
 }
 
 function closeProductDetails() {
@@ -670,19 +802,30 @@ async function transferHomeCartToSales() {
 }
 
 async function loadSales() {
-  const sales = await apiFetch('/api/sales');
-  appState.sales = sales;
-  renderSalesHistory();
+  const finishLoading = startOperation('Cargando historial de ventas...');
+  try {
+    const sales = await apiFetch('/api/sales');
+    appState.sales = sales;
+    renderSalesHistory();
+  } finally {
+    finishLoading();
+  }
 }
 
 function renderSalesHistory() {
   const filterDate = els.salesDateFilter.value;
-  const filtered = filterDate
-    ? appState.sales.filter((sale) => (sale.created_at || sale.date || '').startsWith(filterDate))
-    : appState.sales;
+  const sellerSearch = els.salesSellerFilter.value.trim().toLocaleLowerCase();
+  const filtered = appState.sales.filter((sale) => {
+    const matchesDate = !filterDate || (sale.created_at || sale.date || '').startsWith(filterDate);
+    const sellerName = sale.seller_name || sale.seller || '';
+    const sellerEmail = sale.seller_email || '';
+    const matchesSeller = !sellerSearch
+      || `${sellerName} ${sellerEmail}`.toLocaleLowerCase().includes(sellerSearch);
+    return matchesDate && matchesSeller;
+  });
 
   if (!filtered.length) {
-    els.salesHistoryBody.innerHTML = '<tr><td colspan="5">No hay ventas registradas.</td></tr>';
+    els.salesHistoryBody.innerHTML = '<tr><td colspan="5">No hay ventas con esos filtros.</td></tr>';
     return;
   }
 
@@ -694,13 +837,13 @@ function renderSalesHistory() {
         .join(', ');
       const total = sale.total || 0;
       const date = sale.created_at || sale.date;
-      const seller = sale.seller || sale.seller_id || 'Vendedor';
+      const seller = sale.seller_name || sale.seller || sale.seller_email || 'Vendedor';
       return `
         <tr>
-          <td>${sale.id}</td>
+          <td>${escapeHTML(sale.id)}</td>
           <td>${new Date(date).toLocaleString('es-CO')}</td>
-          <td>${seller}</td>
-          <td>${text}</td>
+          <td>${escapeHTML(seller)}</td>
+          <td>${escapeHTML(text)}</td>
           <td>${formatMoney(total)}</td>
         </tr>
       `;
@@ -717,8 +860,28 @@ function populateSalesSelector() {
 
 async function handleProductSubmit(event) {
   event.preventDefault();
+  if (appState.productSubmitting) return;
+  appState.productSubmitting = true;
+  const finishLoading = startOperation(els.productId.value ? 'Actualizando producto...' : 'Registrando producto...');
+  const submitButton = els.productForm.querySelector('button[type="submit"]');
+  setButtonBusy(submitButton, true, 'Guardando producto...');
+  setButtonBusy(els.newProductBtn, true, 'Guardando...');
+  setControlsDisabled(els.productForm, true);
   const id = els.productId.value;
-  const selectedFile = els.productImageFile.files[0];
+  const pendingImages = appState.productImages.filter((image) => image.file);
+  const selectedCover = appState.productImages[0];
+  const imageUrls = appState.productImages.filter((image) => !image.file).map((image) => image.url);
+  const coverUrl = els.productImageUrl.value.trim();
+  if (coverUrl && !imageUrls.includes(coverUrl)) imageUrls.unshift(coverUrl);
+  if (imageUrls.length + pendingImages.length > 5) {
+    showToast('Cada producto puede tener como máximo 5 imágenes.', 'error');
+    appState.productSubmitting = false;
+    setControlsDisabled(els.productForm, false);
+    setButtonBusy(submitButton, false);
+    setButtonBusy(els.newProductBtn, false);
+    finishLoading();
+    return;
+  }
   const payload = {
     name: els.productName.value,
     description: els.productDescription.value,
@@ -726,9 +889,12 @@ async function handleProductSubmit(event) {
     price: Number(els.productPrice.value),
     quantity: Number(els.productQuantity.value),
     min_stock: Number(els.productMinStock.value),
-    image_url: els.productImageUrl.value,
+    image_url: selectedCover?.file ? '' : (coverUrl || imageUrls[0] || ''),
+    image_urls: imageUrls,
+    removed_image_urls: appState.removedProductImageUrls,
   };
 
+  let productSaved = false;
   try {
     let result;
     if (id) {
@@ -738,29 +904,59 @@ async function handleProductSubmit(event) {
     }
 
     const productId = id || result.product?.id;
-    if (selectedFile && productId) {
+    if (!productId) throw new Error('El servidor no devolvió el identificador del producto.');
+    productSaved = true;
+    els.productId.value = productId;
+    if (pendingImages.length) {
       const formData = new FormData();
-      formData.append('file', selectedFile);
-      await apiFetch(`/api/products/${productId}/image`, { method: 'POST', body: formData });
+      pendingImages.forEach((image) => formData.append('files', image.file));
+      formData.append('cover_index', String(selectedCover?.file ? pendingImages.indexOf(selectedCover) : -1));
+      await apiFetch(`/api/products/${productId}/images`, { method: 'POST', body: formData });
     }
 
     resetProductForm();
     await loadProducts();
     await loadDashboard();
-    setView('products');
+    showToast(id ? 'Producto actualizado correctamente.' : 'Producto registrado correctamente.');
   } catch (error) {
-    alert(error.message);
+    showToast(
+      productSaved
+        ? `El producto se guardó, pero no se completó toda la operación: ${error.message}`
+        : error.message,
+      'error',
+    );
+    if (productSaved) {
+      try {
+        await loadProducts();
+      } catch (refreshError) {
+        console.error('No se pudo actualizar el catálogo después de guardar el producto.', refreshError);
+      }
+    }
+  } finally {
+    appState.productSubmitting = false;
+    setControlsDisabled(els.productForm, false);
+    setButtonBusy(submitButton, false);
+    setButtonBusy(els.newProductBtn, false);
+    finishLoading();
   }
 }
 
-async function deleteProduct(productId) {
+async function deleteProduct(productId, button = null) {
+  if (appState.deletingProducts.has(productId)) return;
   if (!confirm('¿Deseas eliminar este producto?')) return;
+  appState.deletingProducts.add(productId);
+  const finishLoading = startOperation('Eliminando producto...');
+  setButtonBusy(button, true, 'Eliminando...');
   try {
     await apiFetch(`/api/products/${productId}`, { method: 'DELETE' });
-    await loadProducts();
-    await loadDashboard();
+    await Promise.all([loadProducts(), loadDashboard()]);
+    showToast('Producto eliminado correctamente.');
   } catch (error) {
-    alert(error.message);
+    showToast(error.message, 'error');
+  } finally {
+    appState.deletingProducts.delete(productId);
+    setButtonBusy(button, false);
+    finishLoading();
   }
 }
 
@@ -774,10 +970,11 @@ function fillProductForm(productId) {
   els.productPrice.value = product.price;
   els.productQuantity.value = product.quantity;
   els.productMinStock.value = product.min_stock;
+  appState.productImages = getProductImageUrls(product).map((url) => ({ url, file: null, preview: url }));
+  appState.removedProductImageUrls = [];
   els.productImageUrl.value = product.image_url || '';
   els.productImageFile.value = '';
-  releaseProductImagePreview();
-  renderProductImagePreview(product.image_url || '');
+  renderProductImageGalleryEditor();
   setView('products');
 }
 
@@ -785,51 +982,92 @@ function resetProductForm() {
   els.productForm.reset();
   els.productId.value = '';
   els.productImageFile.value = '';
-  releaseProductImagePreview();
-  renderProductImagePreview('');
+  appState.productImages = [];
+  appState.removedProductImageUrls = [];
+  releaseProductImagePreviews();
+  renderProductImageGalleryEditor();
 }
 
-function releaseProductImagePreview() {
-  if (appState.productImagePreviewUrl) {
-    URL.revokeObjectURL(appState.productImagePreviewUrl);
-    appState.productImagePreviewUrl = '';
-  }
+function releaseProductImagePreviews() {
+  appState.productImagePreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+  appState.productImagePreviewUrls = [];
 }
 
-function renderProductImagePreview(imageUrl) {
-  const url = String(imageUrl || '').trim();
-  if (!url) {
-    els.productImagePreviewWrap.classList.add('hidden');
-    els.productImagePreview.removeAttribute('src');
+function renderProductImageGalleryEditor() {
+  if (!appState.productImages.length) {
+    els.productImageGallery.innerHTML = '<p class="demo-note">Aún no hay imágenes seleccionadas.</p>';
     return;
   }
-  els.productImagePreview.src = url;
-  els.productImagePreviewWrap.classList.remove('hidden');
-  els.productImagePreview.onerror = () => {
-    els.productImagePreviewWrap.classList.add('preview-error');
-  };
-  els.productImagePreview.onload = () => {
-    els.productImagePreviewWrap.classList.remove('preview-error');
-  };
+  els.productImageGallery.innerHTML = appState.productImages.map((image, index) => `
+    <article class="product-image-editor-item">
+      <img class="product-image-editor-thumb product-image" src="${escapeHTML(image.preview)}" alt="Imagen ${index + 1} del producto" />
+      <span>${index === 0 ? 'Portada' : `Imagen ${index + 1}`}${image.file ? ' · Pendiente de subir' : ''}</span>
+      <div class="table-actions">
+        ${index ? `<button type="button" class="icon-btn" data-image-cover="${index}">Usar de portada</button>` : ''}
+        <button type="button" class="icon-btn" data-image-remove="${index}" aria-label="Quitar imagen ${index + 1}">Quitar</button>
+      </div>
+    </article>
+  `).join('');
+  attachImageFallbacks(els.productImageGallery);
+}
+
+function handleProductImageUrlInput() {
+  const url = els.productImageUrl.value.trim();
+  if (!url) return;
+  const existingIndex = appState.productImages.findIndex((image) => image.url === url);
+  if (existingIndex >= 0) {
+    appState.productImages.unshift(appState.productImages.splice(existingIndex, 1)[0]);
+    renderProductImageGalleryEditor();
+    return;
+  }
+  if (appState.productImages.length >= 5) {
+    showToast('Quita una imagen antes de agregar otra; el límite es 5.', 'error');
+    els.productImageUrl.value = appState.productImages[0]?.url || '';
+    return;
+  }
+  appState.productImages.unshift({ url, file: null, preview: url });
+  renderProductImageGalleryEditor();
 }
 
 function handleProductImageSelection() {
-  const file = els.productImageFile.files[0];
-  if (!file) return;
-  if (!file.type.startsWith('image/')) {
-    els.productImageFile.value = '';
-    alert('Selecciona un archivo de imagen válido.');
-    return;
+  const files = Array.from(els.productImageFile.files || []);
+  if (!files.length) return;
+  const validFiles = files.filter((file) => file.type.startsWith('image/'));
+  if (validFiles.length !== files.length) {
+    showToast('Se omitieron archivos que no son imágenes.', 'error');
   }
-  releaseProductImagePreview();
-  appState.productImagePreviewUrl = URL.createObjectURL(file);
-  renderProductImagePreview(appState.productImagePreviewUrl);
+  const availableSlots = Math.max(0, 5 - appState.productImages.length);
+  const filesToAdd = validFiles.slice(0, availableSlots);
+  if (filesToAdd.length < validFiles.length) {
+    showToast('Cada producto puede tener como máximo 5 imágenes.', 'error');
+  }
+  filesToAdd.forEach((file) => {
+    const preview = URL.createObjectURL(file);
+    appState.productImagePreviewUrls.push(preview);
+    appState.productImages.push({ url: '', file, preview });
+  });
+  els.productImageFile.value = '';
+  renderProductImageGalleryEditor();
 }
 
-function clearSelectedProductImage() {
-  releaseProductImagePreview();
-  els.productImageFile.value = '';
-  renderProductImagePreview(els.productImageUrl.value);
+function removeProductImage(index) {
+  const [image] = appState.productImages.splice(index, 1);
+  if (!image) return;
+  if (image.file) {
+    URL.revokeObjectURL(image.preview);
+    appState.productImagePreviewUrls = appState.productImagePreviewUrls.filter((url) => url !== image.preview);
+  } else if (image.url && !appState.removedProductImageUrls.includes(image.url)) {
+    appState.removedProductImageUrls.push(image.url);
+  }
+  els.productImageUrl.value = appState.productImages[0]?.url || '';
+  renderProductImageGalleryEditor();
+}
+
+function setProductImageCover(index) {
+  if (index < 0 || index >= appState.productImages.length) return;
+  appState.productImages.unshift(appState.productImages.splice(index, 1)[0]);
+  els.productImageUrl.value = appState.productImages[0].file ? '' : appState.productImages[0].url;
+  renderProductImageGalleryEditor();
 }
 
 function updateDraftTotal() {
@@ -864,9 +1102,9 @@ function renderDraftItems() {
           <td>${formatMoney(item.total)}</td>
           <td>
             <div class="table-actions">
-              <button type="button" class="quantity-btn" data-sale-decrease="${escapeHTML(item.product_id)}" aria-label="Reducir cantidad">−</button>
-              <button type="button" class="quantity-btn" data-sale-increase="${escapeHTML(item.product_id)}" aria-label="Aumentar cantidad" ${!getProduct(item.product_id) || item.quantity >= Number(getProduct(item.product_id).quantity) ? 'disabled' : ''}>+</button>
-              <button type="button" class="icon-btn remove-cart-item-btn" data-sale-remove="${escapeHTML(item.product_id)}">Eliminar</button>
+              <button type="button" class="quantity-btn" data-sale-decrease="${escapeHTML(item.product_id)}" aria-label="Reducir cantidad" ${appState.saleSubmitting ? 'disabled' : ''}>−</button>
+              <button type="button" class="quantity-btn" data-sale-increase="${escapeHTML(item.product_id)}" aria-label="Aumentar cantidad" ${appState.saleSubmitting || !getProduct(item.product_id) || item.quantity >= Number(getProduct(item.product_id).quantity) ? 'disabled' : ''}>+</button>
+              <button type="button" class="icon-btn remove-cart-item-btn" data-sale-remove="${escapeHTML(item.product_id)}" ${appState.saleSubmitting ? 'disabled' : ''}>Eliminar</button>
             </div>
           </td>
         </tr>
@@ -877,6 +1115,7 @@ function renderDraftItems() {
 }
 
 function addSaleItem() {
+  if (appState.saleSubmitting) return;
   const productId = els.saleProduct.value;
   const quantity = Number(els.saleQuantity.value || 0);
   if (!productId || !Number.isInteger(quantity) || quantity <= 0) {
@@ -916,6 +1155,7 @@ function addSaleItem() {
 }
 
 function changeSaleItem(productId, delta) {
+  if (appState.saleSubmitting) return;
   const item = appState.draftItems.find((entry) => entry.product_id === productId);
   if (!item) return;
   const product = getProduct(productId);
@@ -933,13 +1173,21 @@ function changeSaleItem(productId, delta) {
 }
 
 async function confirmSale() {
-  if (!appState.draftItems.length || appState.saleSubmitting) {
+  if (appState.saleSubmitting) return;
+  if (!appState.draftItems.length) {
     alert('Agrega productos antes de confirmar la venta');
+    return;
+  }
+  if (!els.salePaymentMethod.value) {
+    els.salePaymentMethod.reportValidity();
     return;
   }
 
   appState.saleSubmitting = true;
-  els.confirmSaleBtn.disabled = true;
+  const finishLoading = startOperation('Registrando venta...');
+  setControlsDisabled(els.saleForm, true);
+  els.saleItemsBody.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+  setButtonBusy(els.confirmSaleBtn, true, 'Registrando venta...');
   try {
     await loadProducts();
     const invalid = appState.draftItems.find((item) => {
@@ -948,13 +1196,15 @@ async function confirmSale() {
     });
     if (invalid) {
       const product = getProduct(invalid.product_id);
-      alert(`No se puede registrar la venta: ${product?.name || 'Un producto'} ya no tiene existencias suficientes. Ajusta el carrito.`);
+      showToast(`No se puede registrar la venta: ${product?.name || 'Un producto'} ya no tiene existencias suficientes. Ajusta el carrito.`, 'error');
       return;
     }
 
     const payload = {
       items: appState.draftItems.map((item) => ({ product_id: item.product_id, quantity: item.quantity })),
       notes: els.saleNotes.value.trim(),
+      buyer_name: els.saleBuyerName.value.trim() || null,
+      payment_method: els.salePaymentMethod.value,
     };
 
     await apiFetch('/api/sales', {
@@ -964,22 +1214,29 @@ async function confirmSale() {
 
     appState.draftItems = [];
     els.saleNotes.value = '';
+    els.saleBuyerName.value = '';
+    els.salePaymentMethod.value = '';
     renderDraftItems();
     setView('history');
     try {
       await Promise.all([loadDashboard(), loadProducts(), loadSales()]);
+      showToast('Venta registrada correctamente.');
     } catch (refreshError) {
-      alert(`La venta se registró, pero no se pudieron actualizar todos los datos: ${refreshError.message}`);
+      showToast(`La venta se registró, pero no se pudieron actualizar todos los datos: ${refreshError.message}`, 'error');
     }
   } catch (error) {
-    alert(error.message);
+    showToast(error.message, 'error');
   } finally {
     appState.saleSubmitting = false;
-    els.confirmSaleBtn.disabled = false;
+    setControlsDisabled(els.saleForm, false);
+    setButtonBusy(els.confirmSaleBtn, false);
+    renderDraftItems();
+    finishLoading();
   }
 }
 
-async function updateInventoryQuantity(productId) {
+async function updateInventoryQuantity(productId, button = null) {
+  if (appState.updatingInventory.has(productId)) return;
   const product = getProduct(productId);
   if (!product) return;
   const nextValue = prompt(`Ingrese la nueva cantidad para ${product.name}`, product.quantity);
@@ -991,14 +1248,22 @@ async function updateInventoryQuantity(productId) {
     return;
   }
 
+  appState.updatingInventory.add(productId);
+  const finishLoading = startOperation('Actualizando existencias...');
+  setButtonBusy(button, true, 'Actualizando...');
   try {
     await apiFetch(`/api/products/${productId}/stock`, {
       method: 'PATCH',
       body: JSON.stringify({ quantity }),
     });
     await Promise.all([loadProducts(), loadDashboard()]);
+    showToast('Existencias actualizadas correctamente.');
   } catch (error) {
-    alert(error.message);
+    showToast(error.message, 'error');
+  } finally {
+    appState.updatingInventory.delete(productId);
+    setButtonBusy(button, false);
+    finishLoading();
   }
 }
 
@@ -1051,10 +1316,10 @@ els.homeCategoryFilter.addEventListener('change', renderHomeCatalog);
 els.productForm.addEventListener('submit', handleProductSubmit);
 els.cancelProductBtn.addEventListener('click', resetProductForm);
 els.productImageFile.addEventListener('change', handleProductImageSelection);
-els.productImageUrl.addEventListener('input', () => {
-  if (!appState.productImagePreviewUrl) renderProductImagePreview(els.productImageUrl.value);
-});
-els.removeProductImageBtn.addEventListener('click', clearSelectedProductImage);
+els.productImageUrl.addEventListener('change', handleProductImageUrlInput);
+els.inventorySearch.addEventListener('input', renderInventory);
+els.inventoryCategoryFilter.addEventListener('change', renderInventory);
+els.inventoryStatusFilter.addEventListener('change', renderInventory);
 els.newProductBtn.addEventListener('click', () => {
   resetProductForm();
   setView('products');
@@ -1068,6 +1333,8 @@ els.clearHomeCartBtn.addEventListener('click', () => {
 });
 els.continueToSalesBtn.addEventListener('click', transferHomeCartToSales);
 els.closeProductDetailBtn.addEventListener('click', closeProductDetails);
+els.productGalleryPrevious.addEventListener('click', () => changeProductGalleryImage(-1));
+els.productGalleryNext.addEventListener('click', () => changeProductGalleryImage(1));
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && els.productDetailDialog.open) {
     event.preventDefault();
@@ -1091,15 +1358,20 @@ document.addEventListener('click', (event) => {
   } else if (target.dataset.saleIncrease) changeSaleItem(target.dataset.saleIncrease, 1);
   else if (target.dataset.saleDecrease) changeSaleItem(target.dataset.saleDecrease, -1);
   else if (target.dataset.saleRemove) {
+    if (appState.saleSubmitting) return;
     appState.draftItems = appState.draftItems.filter((item) => item.product_id !== target.dataset.saleRemove);
     renderDraftItems();
   } else if (target.dataset.editId) fillProductForm(target.dataset.editId);
-  else if (target.dataset.deleteId) deleteProduct(target.dataset.deleteId);
-  else if (target.dataset.stockId) updateInventoryQuantity(target.dataset.stockId);
+  else if (target.dataset.deleteId) deleteProduct(target.dataset.deleteId, target);
+  else if (target.dataset.stockId) updateInventoryQuantity(target.dataset.stockId, target);
+  else if (target.dataset.imageRemove !== undefined) removeProductImage(Number(target.dataset.imageRemove));
+  else if (target.dataset.imageCover !== undefined) setProductImageCover(Number(target.dataset.imageCover));
 });
 els.salesDateFilter.addEventListener('change', renderSalesHistory);
+els.salesSellerFilter.addEventListener('input', renderSalesHistory);
 document.querySelector('#clear-sales-filter').addEventListener('click', () => {
   els.salesDateFilter.value = '';
+  els.salesSellerFilter.value = '';
   renderSalesHistory();
 });
 els.assistantForm.addEventListener('submit', handleAssistantSubmit);

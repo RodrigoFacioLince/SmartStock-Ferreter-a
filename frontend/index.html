@@ -72,6 +72,11 @@
               <span id="logged-user">Usuario</span>
             </div>
           </header>
+          <div id="operation-indicator" class="operation-indicator hidden" role="status" aria-live="polite">
+            <span class="loading-spinner" aria-hidden="true"></span>
+            <span id="operation-indicator-text"></span>
+          </div>
+          <div id="operation-toast" class="operation-toast hidden" role="status" aria-live="polite"></div>
 
           <div id="config-banner" class="config-banner hidden"></div>
 
@@ -90,8 +95,8 @@
                 <strong id="stat-low-stock">0</strong>
               </article>
               <article class="stat-card accent-purple">
-                <span class="label">Total de ventas</span>
-                <strong id="stat-total-sales">$0</strong>
+                <span class="label">Productos agotados</span>
+                <strong id="stat-out-of-stock">0</strong>
               </article>
             </div>
 
@@ -181,12 +186,9 @@
                   </label>
                   <label>
                     <span>Subir imagen</span>
-                    <input id="product-image-file" type="file" accept="image/*" />
+                    <input id="product-image-file" type="file" accept="image/*" multiple />
                   </label>
-                  <div id="product-image-preview-wrap" class="image-preview-wrap hidden">
-                    <img id="product-image-preview" class="product-image-preview" alt="Vista previa del producto" />
-                    <button type="button" id="remove-product-image-btn" class="secondary-btn">Quitar imagen seleccionada</button>
-                  </div>
+                  <div id="product-image-gallery" class="product-image-editor" aria-live="polite"></div>
                   <div class="form-actions">
                     <button type="submit" class="primary-btn admin-only">Guardar producto</button>
                     <button type="button" id="cancel-product-btn" class="secondary-btn">Limpiar</button>
@@ -228,6 +230,18 @@
               </div>
             </div>
             <div class="panel-card">
+              <div class="filters-row inventory-filters">
+                <input id="inventory-search" type="search" placeholder="Buscar por nombre" aria-label="Buscar productos por nombre" />
+                <select id="inventory-category-filter" aria-label="Filtrar por categoría">
+                  <option value="">Todas las categorías</option>
+                </select>
+                <select id="inventory-status-filter" aria-label="Filtrar por estado del inventario">
+                  <option value="">Todos los estados</option>
+                  <option value="available">Disponible</option>
+                  <option value="low">Stock bajo</option>
+                  <option value="out">Agotado</option>
+                </select>
+              </div>
               <div class="table-wrap">
                 <table>
                   <thead>
@@ -267,6 +281,19 @@
                     <input id="sale-quantity" type="number" min="1" value="1" />
                   </label>
                   <button type="button" id="add-sale-item-btn" class="primary-btn">Agregar producto</button>
+                  <label>
+                    <span>Nombre del comprador (opcional)</span>
+                    <input id="sale-buyer-name" type="text" maxlength="120" />
+                  </label>
+                  <label>
+                    <span>Método de pago</span>
+                    <select id="sale-payment-method" required>
+                      <option value="" selected disabled>Selecciona un método</option>
+                      <option value="efectivo">Efectivo</option>
+                      <option value="tarjeta">Tarjeta</option>
+                      <option value="transferencia">Transferencia</option>
+                    </select>
+                  </label>
                   <div class="sale-notes">
                     <label>
                       <span>Notas</span>
@@ -313,6 +340,7 @@
             <div class="panel-card">
               <div class="filters-row">
                 <input id="sales-date-filter" type="date" />
+                <input id="sales-seller-filter" type="search" placeholder="Buscar vendedor por nombre o correo" aria-label="Buscar vendedor por nombre o correo" />
                 <button id="clear-sales-filter" class="secondary-btn">Limpiar</button>
               </div>
               <div class="table-wrap">
@@ -358,6 +386,11 @@
       <article class="product-detail-panel">
         <button type="button" id="close-product-detail-btn" class="detail-close-btn" aria-label="Cerrar detalles">×</button>
         <div id="product-detail-content"></div>
+        <div id="product-gallery-controls" class="product-gallery-controls hidden" aria-label="Navegación de imágenes del producto">
+          <button type="button" id="product-gallery-previous" class="secondary-btn" aria-label="Imagen anterior">Anterior</button>
+          <span id="product-gallery-count"></span>
+          <button type="button" id="product-gallery-next" class="secondary-btn" aria-label="Imagen siguiente">Siguiente</button>
+        </div>
       </article>
     </dialog>
 
