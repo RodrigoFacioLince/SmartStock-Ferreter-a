@@ -76,6 +76,8 @@ Reinicia los servidores después de cambiar las variables de entorno o la conexi
 
 El backend carga las variables desde `.env` en la raíz del repositorio. El frontend Vite carga las variables públicas desde `frontend/.env`. No copies `SUPABASE_SECRET_KEY` ni `GEMINI_API_KEY` al frontend ni a ninguna variable con prefijo `VITE_`: Vite incorpora esas variables en el código enviado al navegador.
 
+En el backend, los valores definidos en el `.env` de la raíz reemplazan las variables heredadas de la terminal, incluso si están vacíos. Las variables que no aparezcan en ese archivo conservan su valor de entorno. Al cambiar de proyecto Supabase, actualiza la URL y las claves en ambos archivos, reinicia los servidores y vuelve a iniciar sesión con una cuenta del nuevo proyecto.
+
 Configura las variables con los valores de un mismo proyecto:
 
 **`.env` en la raíz (backend):**

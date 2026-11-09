@@ -27,7 +27,8 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "backend" / "data"
 DATA_FILE = DATA_DIR / "store.json"
 
-load_dotenv(ROOT_DIR / ".env")
+# Always load the newest .env, do not cache to avoid configuration issues.
+load_dotenv(ROOT_DIR / ".env", override=True)
 
 
 def detect_lan_origin() -> str | None:
