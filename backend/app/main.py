@@ -174,7 +174,8 @@ ASSISTANT_SENSITIVE_PATTERNS = tuple(re.compile(pattern) for pattern in (
     r"\b(?:ventas?|historial|registros?|estadisticas?)\b.{0,50}\b(?:mes|semana|dia|total|listar|mostrar|muestr|consult|datos?)\b",
     r"\b(?:registros?|historial|estadisticas?)\b.{0,50}\b(?:ventas?|compradores?|clientes?)\b",
     r"\b(?:muestrame|consultame|lista|listar|mostrar|dame)\b.{0,50}\b(?:ventas?|compradores?|clientes?|vendedores?)\b",
-    r"\b(?:compradores?|clientes?|vendedores?|empleados?|usuarios?)\b",
+    r"\b(?:datos?|informacion|registros?|historial|lista|listar|mostrar|muestr\w*|contacto|correos?|telefonos?)\b.{0,40}\b(?:compradores?|clientes?|vendedores?|empleados?|usuarios?)\b",
+    r"\b(?:compradores?|clientes?|vendedores?|empleados?|usuarios?)\b.{0,40}\b(?:compraron|compras?|ventas?|contacto|correos?|telefonos?|datos?|informacion)\b",
     r"\b(?:ingresos?|ganancias?|utilidades?|rentabilidad|facturacion|finanzas?)\b",
     r"\b(?:metodos?|formas?)\s+de\s+pago\b|\b(?:pagos?|transacciones?)\b.{0,40}\b(?:registr|historial|datos?|metodos?)\b",
     r"\b(?:ignora|omite|olvida|desobedece)\b.{0,50}\b(?:instrucciones?|reglas?|restricciones?|anteriores?|sistema)\b",
@@ -186,11 +187,16 @@ ASSISTANT_SENSITIVE_PATTERNS = tuple(re.compile(pattern) for pattern in (
 ))
 
 ASSISTANT_HARDWARE_TERMS = re.compile(
-    r"\b(?:ferreteria|herramientas?|taladros?|brocas?|tornillos?|tuercas?|clavos?|cemento|hormigon|concreto|pinturas?|maderas?|cerraduras?|tuberias?|plomeria|electricidad|construccion|reparaciones?|bricolaje|martillos?|sierras?|llaves?|alicates?|lij[ao]s?|adhesivos?|pegamentos?|siliconas?|materiales?|soldadura|pisos?|techos?|paredes?|metales?|aceros?|griferia|cables?|interruptores?|bombillas?|instalar|arreglar|barnices?|selladores?|discos?|esmeriles?|destornilladores?|cinceles?|pala|palas|serruchos?)\b"
+    r"\b(?:ferreteria|herramientas?|taladros?|brocas?|tornillos?|tuercas?|clavos?|cementos?|hormigon|concreto|pinturas?|maderas?|cerraduras?|tuberias?|plomeria|fontaneria|electricidad|construccion|construir|obras?|remodel\w*|repar\w*|bricolaje|carpinter\w*|albanil\w*|martillos?|sierras?|llaves?|alicates?|lij[ao]s?|adhesivos?|pegamentos?|siliconas?|material\w*|sold\w*|pisos?|techos?|pared(?:es)?|muros?|metales?|aceros?|griferia|cables?|interruptores?|bombillas?|instal\w*|arregl\w*|manten\w*|barnices?|selladores?|impermeabiliz\w*|aislamient\w*|ladrillos?|bloques?|morteros?|yeso|drywall|cimientos?|vigas?|columnas?|acabados?|cerrajeria|jardineria|seguridad industrial|proteccion personal|proteccion|cascos?|guantes?|lentes?|gafas?|chalecos?|botas?|equipo de proteccion|discos?|esmeriles?|destornilladores?|cinceles?|palas?|serruchos?)\b"
+)
+
+ASSISTANT_PROTECTIVE_EQUIPMENT_TERMS = re.compile(
+    r"\b(?:cascos?|lentes?|gafas?|guantes?|chalecos?|botas?|orejeras?|mascarillas?|respiradores?|"
+    r"equipos? de proteccion(?: personal| individual)?|proteccion personal|proteccion para (?:la )?cabeza)\b"
 )
 
 ASSISTANT_CATALOG_TERMS = re.compile(
-    r"\b(?:producto|productos|catalogo|precio|precios|cuesta|costos?|valores?|disponibles?|disponibilidad|stock|existencias|inventario|agotados?|alternativas?|similares|reemplazos?|sustitutos?|complement\w*|accesorios?|tienen|tenemos|hay|comprar|compra|recomienda|recomiend\w*|sugiere|sugerir|stock bajo|para este producto|para esta herramienta)\b"
+    r"\b(?:producto|productos|catalogo|precio|precios|cuesta|costos?|valores?|disponibles?|disponibilidad|stock|existencias|inventario|agotados?|alternativas?|similares|reemplazos?|sustitutos?|complement\w*|accesorios?|comprar|compra|recomienda|recomiend\w*|sugiere|sugerir|stock bajo|para este producto|para esta herramienta)\b"
 )
 
 
@@ -198,9 +204,17 @@ def classify_assistant_request(message: str) -> str:
     normalized = normalize_assistant_text(message)
     if any(pattern.search(normalized) for pattern in ASSISTANT_SENSITIVE_PATTERNS):
         return "restricted"
+    if ASSISTANT_PROTECTIVE_EQUIPMENT_TERMS.search(normalized):
+        return "catalog"
+    catalog_intent = bool(ASSISTANT_CATALOG_TERMS.search(normalized))
+    if not catalog_intent and re.search(r"\b(?:hay|tienen|tenemos|venden)\b", normalized):
+        catalog_intent = not re.search(
+            r"\b(?:diferencias?|entre|significa|sirve|funciona|consiste|como|por que|que es)\b",
+            normalized,
+        )
     if ASSISTANT_HARDWARE_TERMS.search(normalized):
-        return "catalog" if ASSISTANT_CATALOG_TERMS.search(normalized) else "knowledge"
-    if ASSISTANT_CATALOG_TERMS.search(normalized):
+        return "catalog" if catalog_intent else "knowledge"
+    if catalog_intent:
         return "catalog"
     return "off_topic"
 
@@ -208,6 +222,8 @@ def classify_assistant_request(message: str) -> str:
 def select_assistant_products(products: list[dict[str, Any]], question: str) -> list[dict[str, Any]]:
     normalized = normalize_assistant_text(question)
     words = set(re.findall(r"[a-z0-9]+", normalized))
+    if re.search(r"\b(?:proteccion|proteger)\b.{0,30}\b(?:cabeza|craneo)\b", normalized):
+        words.add("casco")
     ignored_words = {
         "hay", "tiene", "tienen", "tenemos", "producto", "productos", "catalogo", "precio", "precios",
         "cuesta", "costo", "costos", "disponible", "disponibles", "disponibilidad", "stock", "existencias",
@@ -1076,10 +1092,13 @@ async def assistant_chat(payload: ChatPayload, _: dict[str, str] = Depends(get_c
     if request_scope == "catalog":
         normalized_question = normalize_assistant_text(payload.message)
         fields = ["name", "description", "category"]
-        needs_availability = bool(re.search(
-            r"\b(?:disponibil\w*|stock|existencias|inventario|agotad\w*|alternativ\w*|similar\w*|reemplaz\w*|sustitut\w*|complement\w*|accesori\w*|recomiend\w*|sugier\w*|tienen|tenemos|hay)\b",
-            normalized_question,
-        ))
+        needs_availability = bool(
+            ASSISTANT_PROTECTIVE_EQUIPMENT_TERMS.search(normalized_question)
+            or re.search(
+                r"\b(?:disponibil\w*|stock|existencias|inventario|agotad\w*|alternativ\w*|similar\w*|reemplaz\w*|sustitut\w*|complement\w*|accesori\w*|recomiend\w*|sugier\w*|tienen|tenemos|hay)\b",
+                normalized_question,
+            )
+        )
         needs_price = bool(re.search(r"\b(?:precio|precios|cuesta|costo|costos|vale|valor)\b", normalized_question))
         needs_min_stock = bool(re.search(r"\b(?:stock bajo|stock minimo|minimo de stock|nivel minimo)\b", normalized_question))
         if needs_price:

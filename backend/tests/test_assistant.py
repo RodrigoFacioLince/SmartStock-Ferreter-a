@@ -178,6 +178,64 @@ class AssistantTests(unittest.TestCase):
         contents = client.aio.models.generate_content.await_args.kwargs["contents"]
         self.assertNotIn("Productos relevantes del catálogo", contents)
 
+    def test_protective_equipment_questions_use_catalog_and_match_head_protection(self):
+        questions = ("un casco de construcción", "un equipo de protección para la cabeza")
+        for question in questions:
+            with self.subTest(question=question):
+                self.assertEqual(main.classify_assistant_request(question), "catalog")
+                matched = main.select_assistant_products(
+                    [{
+                        "name": "Casco de construcción",
+                        "description": "Protección de cabeza para obra",
+                        "category": "Seguridad industrial",
+                        "quantity": 4,
+                    }],
+                    question,
+                )
+                self.assertEqual([product["name"] for product in matched], ["Casco de construcción"])
+
+    def test_related_trade_questions_are_allowed_as_general_knowledge(self):
+        questions = (
+            "¿Qué protección necesita alguien que trabaja en una obra?",
+            "¿Cómo impermeabilizar una pared exterior?",
+            "¿Qué diferencia hay entre mortero y cemento?",
+        )
+        for question in questions:
+            with self.subTest(question=question):
+                self.assertEqual(main.classify_assistant_request(question), "knowledge")
+
+    def test_mentioning_a_customer_in_a_product_question_is_not_restricted(self):
+        self.assertEqual(
+            main.classify_assistant_request("¿Qué casco puede usar un cliente en una obra?"),
+            "catalog",
+        )
+
+    def test_protective_equipment_request_includes_stock_for_grounded_answer(self):
+        main.SUPABASE_URL = "https://project.invalid"
+        main.SUPABASE_PUBLISHABLE_KEY = "test-publishable-key"
+        main.SUPABASE_SECRET_KEY = "test-secret-key"
+        service = Mock()
+        service.table.return_value.select.return_value.order.return_value.execute.return_value.data = [{
+            "name": "Casco de construcción",
+            "description": "Protección de cabeza para obra",
+            "category": "Seguridad industrial",
+            "quantity": 4,
+        }]
+        client = self.create_gemini_client("Sí, hay 4 cascos disponibles.")
+        with (
+            patch.object(main, "get_service_supabase", return_value=service),
+            patch.object(main.genai, "Client", return_value=client),
+        ):
+            response = self.client.post(
+                "/api/assistant/chat",
+                json={"message": "un equipo de protección para la cabeza"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        service.table.return_value.select.assert_called_once_with("name,description,category,quantity")
+        self.assertIn('"name": "Casco de construcción"', client.aio.models.generate_content.await_args.kwargs["contents"])
+        self.assertIn('"quantity": 4', client.aio.models.generate_content.await_args.kwargs["contents"])
+
     def test_off_topic_requests_are_rejected_without_supabase_or_gemini(self):
         questions = (
             "¿A cuánto está el pollo en KFC?",
